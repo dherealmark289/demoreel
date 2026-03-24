@@ -212,6 +212,51 @@
     .api-hint h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
     .api-code { background: var(--bg); border-radius: 6px; padding: 10px 14px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; color: #a5b4fc; overflow-x: auto; }
 
+    /* ── History ── */
+    .history-section { margin-top: 32px; }
+    .history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .history-header h2 { font-size: 1rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .history-stats { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+    .stat-pill { padding: 6px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; font-size: 0.75rem; color: var(--muted); }
+    .stat-pill strong { color: var(--text); }
+    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .history-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; transition: border-color 0.15s;
+    }
+    .history-card:hover { border-color: var(--accent); }
+    .history-thumb {
+      width: 100%; aspect-ratio: 16/9; background: var(--bg3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; color: var(--muted); position: relative; overflow: hidden;
+    }
+    .history-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .history-status-badge {
+      position: absolute; top: 6px; right: 6px; padding: 2px 8px;
+      border-radius: 10px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    }
+    .history-status-badge.completed { background: rgba(22,163,74,0.9); color: #fff; }
+    .history-status-badge.failed { background: rgba(220,38,38,0.9); color: #fff; }
+    .history-status-badge.processing { background: rgba(37,99,235,0.9); color: #fff; }
+    .history-body { padding: 12px 14px; }
+    .history-url { font-size: 0.78rem; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .history-meta { font-size: 0.7rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .history-actions { display: flex; gap: 8px; }
+    .btn-history-dl {
+      flex: 1; padding: 6px 10px; background: var(--accent); color: #fff;
+      border: none; border-radius: 7px; font-size: 0.75rem; font-weight: 600;
+      cursor: pointer; text-align: center; text-decoration: none; transition: opacity 0.15s;
+    }
+    .btn-history-dl:hover { opacity: 0.85; }
+    .btn-history-dl.disabled { background: var(--bg4); color: var(--muted); cursor: not-allowed; pointer-events: none; }
+    .history-empty { text-align: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
+    .history-refresh-btn {
+      padding: 6px 14px; background: var(--bg4); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--muted); font-size: 0.75rem; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .history-refresh-btn:hover { border-color: var(--accent); color: var(--text); }
+
     /* Interactions builder */
     .interactions-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
     .interaction-item { display: flex; align-items: center; gap: 8px; background: var(--bg3); border-radius: 8px; padding: 8px 12px; font-size: 0.8rem; }
@@ -535,6 +580,18 @@
     <div class="result-actions">
       <a class="btn-download" id="download-btn" href="#" download>⬇ Download MP4</a>
       <button class="btn-new" onclick="resetAll()">+ Record Another</button>
+    </div>
+  </div>
+
+  <!-- History Section -->
+  <div class="history-section" id="history-section">
+    <div class="history-header">
+      <h2>📼 Recording History</h2>
+      <button class="history-refresh-btn" onclick="loadHistory()" id="history-refresh-btn">↻ Refresh</button>
+    </div>
+    <div class="history-stats" id="history-stats"></div>
+    <div class="history-grid" id="history-grid">
+      <div class="history-empty">Loading history...</div>
     </div>
   </div>
 
@@ -1066,6 +1123,97 @@ function getSelected(group) {
   const el = document.querySelector(`.pills[data-group="${group}"] .pill.active`);
   return el ? el.dataset.value : null;
 }
+
+// ─── History ──────────────────────────────────────────────────────────────────
+let historyAutoRefresh = null;
+
+async function loadHistory() {
+  const grid = document.getElementById('history-grid');
+  const statsEl = document.getElementById('history-stats');
+  const btn = document.getElementById('history-refresh-btn');
+  if (btn) btn.textContent = '↻ Loading...';
+
+  try {
+    // Load stats
+    const [histRes, statsRes] = await Promise.all([
+      fetch('/api/history?limit=20'),
+      fetch('/api/stats'),
+    ]);
+
+    const histData = await histRes.json();
+    const statsData = await statsRes.json();
+
+    // Render stats pills
+    if (statsEl && statsData) {
+      const totalMB = statsData.total_bytes ? (statsData.total_bytes / 1024 / 1024).toFixed(1) : '0';
+      const avgDur = statsData.avg_duration ? Math.round(statsData.avg_duration) + 's' : '—';
+      statsEl.innerHTML = `
+        <div class="stat-pill">🎬 <strong>${statsData.total_jobs || 0}</strong> total jobs</div>
+        <div class="stat-pill">✅ <strong>${statsData.completed || 0}</strong> completed</div>
+        <div class="stat-pill">💾 <strong>${totalMB} MB</strong> stored</div>
+        <div class="stat-pill">⏱ <strong>${avgDur}</strong> avg duration</div>
+        <div class="stat-pill">📡 <strong>${statsData.source === 'database' ? 'Supabase' : 'Memory'}</strong></div>
+      `;
+    }
+
+    const jobs = histData.jobs || [];
+    if (!jobs.length) {
+      grid.innerHTML = '<div class="history-empty">No recordings yet. Create your first demo video above! 🎬</div>';
+      return;
+    }
+
+    grid.innerHTML = jobs.map(job => {
+      const date = job.created_at ? new Date(job.created_at).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      }) : '';
+      const size = job.video_size_bytes ? (job.video_size_bytes / 1024 / 1024).toFixed(1) + ' MB' : '';
+      const dur = job.duration_seconds ? Math.round(job.duration_seconds) + 's' : '';
+      const urlShort = job.url ? job.url.replace(/^https?:\/\//, '').slice(0, 30) : '—';
+      const dlUrl = job.video_url || `/api/download/${job.id}`;
+      const hasDl = job.status === 'completed';
+
+      return `
+        <div class="history-card">
+          <div class="history-thumb">
+            ${job.thumbnail_url
+              ? `<img src="${job.thumbnail_url}" alt="thumbnail" loading="lazy" onerror="this.style.display='none';this.parentNode.textContent='🎬'" />`
+              : '🎬'
+            }
+            <span class="history-status-badge ${job.status}">${job.status}</span>
+          </div>
+          <div class="history-body">
+            <div class="history-url" title="${job.url || ''}">${urlShort}</div>
+            <div class="history-meta">
+              ${date ? `<span>📅 ${date}</span>` : ''}
+              ${dur ? `<span>⏱ ${dur}</span>` : ''}
+              ${size ? `<span>💾 ${size}</span>` : ''}
+            </div>
+            <div class="history-actions">
+              <a class="btn-history-dl ${hasDl ? '' : 'disabled'}"
+                 href="${hasDl ? dlUrl : '#'}"
+                 ${hasDl ? 'target="_blank"' : ''}
+                 title="${hasDl ? 'Download video' : 'Not available'}">
+                ${hasDl ? '⬇ Download' : '⏳ ' + job.status}
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    console.warn('History load failed:', e);
+    grid.innerHTML = '<div class="history-empty">Could not load history.</div>';
+  } finally {
+    if (btn) btn.textContent = '↻ Refresh';
+  }
+}
+
+// Auto-load history on page load, then refresh every 30s
+window.addEventListener('DOMContentLoaded', () => {
+  loadHistory();
+  historyAutoRefresh = setInterval(loadHistory, 30000);
+});
 </script>
 </body>
 </html>

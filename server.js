@@ -1,6 +1,7 @@
 /**
  * server.js — DemoReel Express backend (v2)
  * Agent-first demo video studio with comprehensive REST API
+ * + Persistent storage: Supabase (PostgreSQL) + Cloudflare R2
  */
 
 const express = require('express');
@@ -11,12 +12,16 @@ const { record, VIEWPORTS } = require('./recorder');
 const { generateScript } = require('./scriptGen');
 const { generateVoiceover, getVoiceList, cleanupOldAudio } = require('./voiceover');
 const { TRACK_METADATA } = require('./musicGen');
+const { Storage } = require('./storage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Job Store ──────────────────────────────────────────────────────────────
-// { id: { status, progress, progressPercent, outputPath, error, createdAt, metadata } }
+// ─── Storage Init ─────────────────────────────────────────────────────────────
+const storage = new Storage();
+
+// ─── Job Store (in-memory fallback) ──────────────────────────────────────────
+// { id: { status, progress, progressPercent, outputPath, error, createdAt, metadata, videoUrl, thumbnailUrl } }
 const jobs = new Map();
 const MAX_CONCURRENT = 3;
 
@@ -35,6 +40,9 @@ setInterval(() => {
     if (now - job.createdAt > 60 * 60 * 1000) {
       if (job.outputPath) {
         try { fs.unlinkSync(job.outputPath); } catch {}
+      }
+      if (job.thumbPath) {
+        try { fs.unlinkSync(job.thumbPath); } catch {}
       }
       jobs.delete(id);
     }
@@ -63,7 +71,11 @@ function jobResponse(id, job) {
     progress: job.progressPercent || 0,
     progressMessage: job.progress || '',
     estimatedTime: job.estimatedTime || null,
-    downloadUrl: job.status === 'completed' ? `/api/download/${id}` : null,
+    downloadUrl: job.status === 'completed'
+      ? (job.videoUrl || `/api/download/${id}`)
+      : null,
+    videoUrl: job.videoUrl || null,
+    thumbnailUrl: job.thumbnailUrl || null,
     error: job.error || null,
     metadata: job.metadata || {
       duration: null,
@@ -78,14 +90,37 @@ function getFileSize(filePath) {
   try { return fs.statSync(filePath).size; } catch { return null; }
 }
 
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+    || req.socket?.remoteAddress
+    || null;
+}
+
 // ─── GET /health ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', version: '2.0.0', jobs: jobs.size });
+  res.json({
+    status: 'ok',
+    version: '2.0.0',
+    jobs: jobs.size,
+    storage: {
+      db: storage.dbAvailable,
+      r2: storage.r2Available,
+    },
+  });
 });
 
 // ─── GET /api/health ─────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '2.0.0', jobs: jobs.size, activeJobs: getActiveJobCount() });
+  res.json({
+    status: 'ok',
+    version: '2.0.0',
+    jobs: jobs.size,
+    activeJobs: getActiveJobCount(),
+    storage: {
+      db: storage.dbAvailable,
+      r2: storage.r2Available,
+    },
+  });
 });
 
 // ─── GET /api/presets ────────────────────────────────────────────────────────
@@ -218,6 +253,7 @@ app.post('/api/record', async (req, res) => {
 
   const id = uuidv4();
   const outputPath = `/tmp/demoreel-${id}.mp4`;
+  const thumbPath = `/tmp/demoreel-${id}-thumb.jpg`;
   const vp = viewport === 'custom' ? customViewport : VIEWPORTS[viewport];
   const durationNum = Math.max(5, Math.min(120, Number(duration) || 30));
 
@@ -231,11 +267,19 @@ app.post('/api/record', async (req, res) => {
     musicTrack = 'upbeat-tech';
   }
 
+  const jobConfig = {
+    viewport, theme, speed, duration: durationNum,
+    cursor: Boolean(cursor), music: musicOpts, branding, privacy, protection, export: exportOpts,
+  };
+
   const job = {
     status: 'processing',
     progress: 'Initializing...',
     progressPercent: 5,
     outputPath: null,
+    thumbPath: null,
+    videoUrl: null,
+    thumbnailUrl: null,
     error: null,
     createdAt: Date.now(),
     estimatedTime: durationNum + 15,
@@ -248,6 +292,11 @@ app.post('/api/record', async (req, res) => {
   };
 
   jobs.set(id, job);
+
+  // Create job record in Supabase (non-blocking)
+  const ip = getClientIp(req);
+  const ua = req.headers['user-agent'] || null;
+  storage.createJob(id, parsedUrl.href, jobConfig, ip, ua).catch(() => {});
 
   // Start recording in background
   (async () => {
@@ -274,7 +323,6 @@ app.post('/api/record', async (req, res) => {
           const j = jobs.get(id);
           if (!j) return;
           j.progress = msg;
-          // Rough progress estimate
           if (msg.includes('browser')) j.progressPercent = 10;
           else if (msg.includes('Loading')) j.progressPercent = 20;
           else if (msg.includes('interact')) j.progressPercent = 30;
@@ -286,13 +334,36 @@ app.post('/api/record', async (req, res) => {
       });
 
       const j = jobs.get(id);
-      if (j) {
-        j.status = 'completed';
-        j.outputPath = outputPath;
-        j.progress = 'Done!';
-        j.progressPercent = 100;
-        j.metadata.fileSize = getFileSize(outputPath);
-      }
+      if (!j) return;
+
+      const fileSize = getFileSize(outputPath);
+      j.status = 'completed';
+      j.outputPath = outputPath;
+      j.progress = 'Done!';
+      j.progressPercent = 100;
+      j.metadata.fileSize = fileSize;
+
+      // Generate thumbnail
+      const thumbGenPath = await storage.generateThumbnail(outputPath, thumbPath);
+      j.thumbPath = thumbGenPath;
+
+      // Upload to R2
+      const [videoUrl, thumbnailUrl] = await Promise.all([
+        storage.uploadVideo(id, outputPath),
+        thumbGenPath ? storage.uploadThumbnail(id, thumbGenPath) : Promise.resolve(null),
+      ]);
+
+      j.videoUrl = videoUrl;
+      j.thumbnailUrl = thumbnailUrl;
+
+      // Update Supabase
+      storage.updateJob(id, {
+        status: 'completed',
+        video_url: videoUrl,
+        video_size_bytes: fileSize,
+        thumbnail_url: thumbnailUrl,
+      }).catch(() => {});
+
     } catch (err) {
       console.error(`[job ${id}] Error:`, err.message);
       const j = jobs.get(id);
@@ -302,6 +373,10 @@ app.post('/api/record', async (req, res) => {
         j.progress = 'Failed';
         j.progressPercent = 0;
       }
+      storage.updateJob(id, {
+        status: 'failed',
+        error: err.message,
+      }).catch(() => {});
     }
   })();
 
@@ -309,26 +384,136 @@ app.post('/api/record', async (req, res) => {
 });
 
 // ─── GET /api/status/:id ──────────────────────────────────────────────────────
-app.get('/api/status/:id', (req, res) => {
-  const job = jobs.get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  res.json(jobResponse(req.params.id, job));
+app.get('/api/status/:id', async (req, res) => {
+  // Check in-memory first (active jobs)
+  const memJob = jobs.get(req.params.id);
+  if (memJob) {
+    return res.json(jobResponse(req.params.id, memJob));
+  }
+
+  // Fall back to Supabase for historical jobs
+  const dbJob = await storage.getJob(req.params.id);
+  if (dbJob) {
+    return res.json({
+      id: dbJob.id,
+      status: dbJob.status,
+      progress: dbJob.status === 'completed' ? 100 : 0,
+      progressMessage: dbJob.status,
+      estimatedTime: null,
+      downloadUrl: dbJob.video_url || (dbJob.status === 'completed' ? `/api/download/${dbJob.id}` : null),
+      videoUrl: dbJob.video_url || null,
+      thumbnailUrl: dbJob.thumbnail_url || null,
+      error: dbJob.error || null,
+      metadata: {
+        duration: dbJob.duration_seconds,
+        fileSize: dbJob.video_size_bytes,
+        resolution: dbJob.config?.resolution || null,
+        scenes: 0,
+      },
+    });
+  }
+
+  return res.status(404).json({ error: 'Job not found' });
 });
 
 // ─── GET /api/download/:id ────────────────────────────────────────────────────
-app.get('/api/download/:id', (req, res) => {
-  const job = jobs.get(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  if (job.status !== 'completed') {
-    return res.status(202).json({ error: 'Not ready yet', status: job.status });
-  }
-  if (!job.outputPath || !fs.existsSync(job.outputPath)) {
-    return res.status(410).json({ error: 'File expired or missing' });
+app.get('/api/download/:id', async (req, res) => {
+  // Check in-memory first
+  const memJob = jobs.get(req.params.id);
+  if (memJob) {
+    if (memJob.status !== 'completed') {
+      return res.status(202).json({ error: 'Not ready yet', status: memJob.status });
+    }
+    // If R2 URL available, redirect
+    if (memJob.videoUrl) {
+      return res.redirect(302, memJob.videoUrl);
+    }
+    // Serve from /tmp
+    if (!memJob.outputPath || !fs.existsSync(memJob.outputPath)) {
+      return res.status(410).json({ error: 'File expired or missing' });
+    }
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="demoreel-${req.params.id.slice(0, 8)}.mp4"`);
+    return res.sendFile(memJob.outputPath);
   }
 
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Content-Disposition', `attachment; filename="demoreel-${req.params.id.slice(0, 8)}.mp4"`);
-  res.sendFile(job.outputPath);
+  // Check Supabase for historical jobs
+  const dbJob = await storage.getJob(req.params.id);
+  if (dbJob) {
+    if (dbJob.video_url) {
+      return res.redirect(302, dbJob.video_url);
+    }
+    return res.status(410).json({ error: 'Video expired — no longer available in storage' });
+  }
+
+  return res.status(404).json({ error: 'Job not found' });
+});
+
+// ─── GET /api/history ─────────────────────────────────────────────────────────
+app.get('/api/history', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+
+  if (!storage.dbAvailable) {
+    // Return from in-memory as fallback
+    const arr = [];
+    for (const [id, job] of jobs.entries()) {
+      arr.push({
+        id,
+        url: job.url || null,
+        status: job.status,
+        video_url: job.videoUrl || null,
+        thumbnail_url: job.thumbnailUrl || null,
+        video_size_bytes: job.metadata?.fileSize || null,
+        duration_seconds: job.metadata?.duration || null,
+        created_at: new Date(job.createdAt).toISOString(),
+        completed_at: job.status === 'completed' ? new Date().toISOString() : null,
+        error: job.error || null,
+      });
+    }
+    arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return res.json({
+      jobs: arr.slice(offset, offset + limit),
+      total: arr.length,
+      limit,
+      offset,
+      source: 'memory',
+    });
+  }
+
+  const history = await storage.getHistory(limit, offset);
+  res.json({
+    jobs: history,
+    limit,
+    offset,
+    source: 'database',
+  });
+});
+
+// ─── GET /api/stats ───────────────────────────────────────────────────────────
+app.get('/api/stats', async (req, res) => {
+  if (!storage.dbAvailable) {
+    // Compute from in-memory
+    let completed = 0, failed = 0, active = 0, totalBytes = 0;
+    for (const [, job] of jobs) {
+      if (job.status === 'completed') { completed++; totalBytes += job.metadata?.fileSize || 0; }
+      else if (job.status === 'failed') failed++;
+      else if (job.status === 'processing' || job.status === 'queued') active++;
+    }
+    return res.json({
+      total_jobs: jobs.size,
+      completed,
+      failed,
+      active,
+      total_bytes: totalBytes,
+      avg_duration: null,
+      last_job_at: null,
+      source: 'memory',
+    });
+  }
+
+  const stats = await storage.getStats();
+  res.json({ ...(stats || {}), source: 'database' });
 });
 
 // ─── GET /api/audio/:filename ─────────────────────────────────────────────────
@@ -413,7 +598,7 @@ app.get('/api/docs', (req, res) => {
     endpoints: {
       'GET /health': {
         description: 'Health check',
-        response: { status: 'ok', version: '2.0.0', jobs: 0 },
+        response: { status: 'ok', version: '2.0.0', jobs: 0, storage: { db: true, r2: true } },
       },
       'GET /api/presets': {
         description: 'List all available presets (music, voices, viewports, templates)',
@@ -461,8 +646,8 @@ app.get('/api/docs', (req, res) => {
             type: 'object',
             description: 'Privacy protection — blur sensitive content',
             properties: {
-              blur: { type: 'array', items: { type: 'string' }, description: 'CSS selectors to blur (e.g. [".api-key", "#password"])' },
-              autoDetect: { type: 'boolean', default: true, description: 'Auto-detect and blur API keys, emails, passwords' },
+              blur: { type: 'array', items: { type: 'string' }, description: 'CSS selectors to blur' },
+              autoDetect: { type: 'boolean', default: true },
               blurStrength: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' },
             },
           },
@@ -470,8 +655,8 @@ app.get('/api/docs', (req, res) => {
             type: 'object',
             description: 'Anti-clone protection',
             properties: {
-              fingerprint: { type: 'boolean', default: true, description: 'Embed invisible fingerprint in video' },
-              watermark: { type: 'boolean', default: false, description: 'Show visible watermark badge' },
+              fingerprint: { type: 'boolean', default: true },
+              watermark: { type: 'boolean', default: false },
               watermarkText: { type: 'string', default: 'Made with DemoReel' },
             },
           },
@@ -491,24 +676,35 @@ app.get('/api/docs', (req, res) => {
           progressMessage: 'Initializing...',
           estimatedTime: 45,
           downloadUrl: null,
+          videoUrl: null,
+          thumbnailUrl: null,
           error: null,
           metadata: { duration: null, fileSize: null, resolution: '1280x720', scenes: 0 },
         },
       },
       'GET /api/status/:id': {
-        description: 'Poll job status',
+        description: 'Poll job status — checks in-memory first, then Supabase for historical jobs',
         response: 'Same as POST /api/record response. status: queued|processing|completed|failed',
       },
       'GET /api/download/:id': {
-        description: 'Download completed video file',
-        response: 'video/mp4 binary or JSON error',
+        description: 'Download completed video — redirects to R2 URL if available, else serves from /tmp',
+        response: 'Redirects to video/mp4 or JSON error',
+      },
+      'GET /api/history': {
+        description: 'Paginated job history from Supabase',
+        query: { limit: 'max 200, default 50', offset: 'default 0' },
+        response: '{ jobs[], total, limit, offset, source }',
+      },
+      'GET /api/stats': {
+        description: 'Aggregate stats: total jobs, sizes, durations',
+        response: '{ total_jobs, completed, failed, active, total_bytes, avg_duration, last_job_at, source }',
       },
       'POST /api/script/generate': {
         description: 'AI-powered script generation via Gemini (requires GEMINI_API_KEY)',
         body: {
           url: { type: 'string', required: true },
           purpose: { type: 'string', enum: ['product-demo', 'tutorial', 'showcase', 'teaser'], default: 'product-demo' },
-          duration: { type: 'number', default: 30, description: 'Target script duration in seconds' },
+          duration: { type: 'number', default: 30 },
           tone: { type: 'string', enum: ['professional', 'casual', 'exciting', 'technical'], default: 'professional' },
         },
         response: { script: 'narration text...', sections: [{ text: '...', scrollPercent: 0 }] },
@@ -516,8 +712,8 @@ app.get('/api/docs', (req, res) => {
       'POST /api/voiceover/generate': {
         description: 'Generate voiceover audio via ElevenLabs (requires ELEVENLABS_API_KEY)',
         body: {
-          script: { type: 'string', required: true, description: 'Text to convert to speech' },
-          voice: { type: 'string', default: 'alloy', description: 'Voice ID or preset name' },
+          script: { type: 'string', required: true },
+          voice: { type: 'string', default: 'alloy' },
           provider: { type: 'string', default: 'elevenlabs', enum: ['elevenlabs'] },
         },
         response: { audioUrl: '/api/audio/uuid.mp3', duration: 28.5 },
@@ -532,9 +728,11 @@ app.get('/api/docs', (req, res) => {
       steps: [
         '1. POST /api/record with your URL and options → receive { id }',
         '2. Poll GET /api/status/:id every 2-3 seconds until status==="completed"',
-        '3. Download via GET /api/download/:id',
-        '4. Optionally: generate script first via POST /api/script/generate',
-        '5. Optionally: generate voiceover via POST /api/voiceover/generate',
+        '3. Use downloadUrl or videoUrl from status response (R2 link if available)',
+        '4. GET /api/history to list past recordings with thumbnails',
+        '5. GET /api/stats for aggregate metrics',
+        '6. Optionally: generate script first via POST /api/script/generate',
+        '7. Optionally: generate voiceover via POST /api/voiceover/generate',
       ],
     },
   });
@@ -543,12 +741,25 @@ app.get('/api/docs', (req, res) => {
 // ─── Serve audio files from public/audio ─────────────────────────────────────
 app.use('/audio', express.static(path.join(__dirname, 'public', 'audio')));
 
-app.listen(PORT, () => {
-  console.log(`🎬 DemoReel v2 running on port ${PORT}`);
-  console.log(`   Health:  http://localhost:${PORT}/health`);
-  console.log(`   API:     http://localhost:${PORT}/api/docs`);
-  console.log(`   UI:      http://localhost:${PORT}/`);
+// ─── Start Server ─────────────────────────────────────────────────────────────
+async function start() {
+  // Init storage (non-blocking if unavailable)
+  await storage.init();
 
-  // Ensure audio directory exists
-  fs.mkdirSync(path.join(__dirname, 'public', 'audio'), { recursive: true });
+  app.listen(PORT, () => {
+    console.log(`🎬 DemoReel v2 running on port ${PORT}`);
+    console.log(`   Health:  http://localhost:${PORT}/health`);
+    console.log(`   API:     http://localhost:${PORT}/api/docs`);
+    console.log(`   UI:      http://localhost:${PORT}/`);
+    console.log(`   DB:      ${storage.dbAvailable ? '✅ Supabase' : '⚠️  in-memory fallback'}`);
+    console.log(`   Storage: ${storage.r2Available ? '✅ Cloudflare R2' : '⚠️  /tmp fallback'}`);
+
+    // Ensure audio directory exists
+    fs.mkdirSync(path.join(__dirname, 'public', 'audio'), { recursive: true });
+  });
+}
+
+start().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
