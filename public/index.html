@@ -287,6 +287,9 @@
           <button class="pill" onclick="applyTemplate('app-walkthrough')">🖥️ App Walkthrough</button>
         </div>
       </div>
+      <div class="info-box">
+        💡 Works with any URL — including <strong>localhost</strong> if you're running DemoReel locally, <code>file://</code> paths, and LAN addresses.
+      </div>
     </div>
     <div class="nav-row">
       <button class="btn-next" onclick="nextStep()">Next: Style →</button>
@@ -349,6 +352,25 @@
           <label for="badge-toggle" style="margin-right:10px;">🏷️ Show Badge</label>
           <label class="toggle"><input type="checkbox" id="badge-toggle" /><span class="slider"></span></label>
         </div>
+      </div>
+    </div>
+
+    <!-- Privacy & Protection -->
+    <div class="card">
+      <div class="card-title"><span>🔒</span> Privacy & Protection</div>
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:14px;">
+        <div class="toggle-row">
+          <label for="fp-toggle" style="margin-right:10px;">🔍 Invisible Fingerprint</label>
+          <label class="toggle"><input type="checkbox" id="fp-toggle" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <label for="auto-blur-toggle" style="margin-right:10px;">🛡️ Auto-blur Sensitive Data</label>
+          <label class="toggle"><input type="checkbox" id="auto-blur-toggle" checked /><span class="slider"></span></label>
+        </div>
+      </div>
+      <div class="option-group" style="margin-bottom:0;">
+        <label>Blur CSS Selectors <span style="text-transform:none;font-weight:normal;">(optional — e.g. <code>.api-key, #password</code>)</span></label>
+        <input id="blur-input" class="url-input" style="margin-bottom:0;font-size:0.88rem;padding:10px 14px;" placeholder=".api-key, .secret, #sensitive-field" />
       </div>
     </div>
 
@@ -922,6 +944,14 @@ async function startRecording() {
     interactions: interactions,
     branding: {
       showBadge: document.getElementById('badge-toggle').checked,
+    },
+    privacy: {
+      blur: document.getElementById('blur-input').value.split(',').map(s=>s.trim()).filter(Boolean),
+      autoDetect: document.getElementById('auto-blur-toggle').checked,
+      blurStrength: 'medium',
+    },
+    protection: {
+      fingerprint: document.getElementById('fp-toggle').checked,
     },
     music: selectedMusic !== 'none' ? {
       track: selectedMusic,

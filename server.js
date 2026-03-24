@@ -178,6 +178,8 @@ app.post('/api/record', async (req, res) => {
     script: scriptOpts = {},
     music: musicOpts = {},
     branding = {},
+    privacy = {},
+    protection = {},
     export: exportOpts = {},
   } = req.body;
 
@@ -264,6 +266,8 @@ app.post('/api/record', async (req, res) => {
         hideScrollbar: Boolean(hideScrollbar),
         interactions: Array.isArray(interactions) ? interactions : [],
         branding,
+        privacy,
+        protection,
         export: exportOpts,
         outputPath,
         onProgress: (msg) => {
@@ -451,6 +455,24 @@ app.get('/api/docs', (req, res) => {
             type: 'object',
             properties: {
               showBadge: { type: 'boolean', description: 'Show "Made with DemoReel" badge' },
+            },
+          },
+          privacy: {
+            type: 'object',
+            description: 'Privacy protection — blur sensitive content',
+            properties: {
+              blur: { type: 'array', items: { type: 'string' }, description: 'CSS selectors to blur (e.g. [".api-key", "#password"])' },
+              autoDetect: { type: 'boolean', default: true, description: 'Auto-detect and blur API keys, emails, passwords' },
+              blurStrength: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' },
+            },
+          },
+          protection: {
+            type: 'object',
+            description: 'Anti-clone protection',
+            properties: {
+              fingerprint: { type: 'boolean', default: true, description: 'Embed invisible fingerprint in video' },
+              watermark: { type: 'boolean', default: false, description: 'Show visible watermark badge' },
+              watermarkText: { type: 'string', default: 'Made with DemoReel' },
             },
           },
           export: {

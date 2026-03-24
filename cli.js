@@ -1,359 +1,497 @@
 #!/usr/bin/env node
 /**
- * DemoReel CLI — Record polished demo videos from the command line
- * 
+ * cli.js — DemoReel CLI
+ * Works in LOCAL mode (direct Playwright) or REMOTE mode (--server URL)
+ *
  * Usage:
- *   demoreel record <url> [options]     Record a website scroll video
- *   demoreel script <url> [options]     Generate a voiceover script
- *   demoreel presets                    List available presets
- *   demoreel post [options]             Post video to X/Twitter (coming soon)
- * 
- * Examples:
  *   demoreel record https://example.com -o demo.mp4
- *   demoreel record http://localhost:3000 --template social-teaser -o teaser.mp4
- *   demoreel record file:///path/to/index.html --speed blazing -o local.mp4
- *   demoreel record https://app.com --blur ".api-key,#secret" --music upbeat-tech
+ *   demoreel record https://example.com --template social-teaser -o teaser.mp4
+ *   demoreel script https://example.com --tone professional
+ *   demoreel presets
+ *   demoreel record https://example.com --server http://localhost:3000 -o demo.mp4
  */
 
-const { execSync, spawn } = require('child_process');
-const fs = require('fs');
 const path = require('path');
-const http = require('http');
+const fs = require('fs');
 const https = require('https');
+const http = require('http');
 
-// ─── Argument parser ────────────────────────────────────────────────────────
+// ─── Arg Parser (no external deps) ───────────────────────────────────────────
 function parseArgs(argv) {
-  const args = { _: [], flags: {} };
-  let i = 2; // skip node + script
-  while (i < argv.length) {
-    const a = argv[i];
+  const args = argv.slice(2);
+  const opts = { _: [] };
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i];
     if (a.startsWith('--')) {
       const key = a.slice(2);
-      const next = argv[i + 1];
-      if (!next || next.startsWith('-')) {
-        args.flags[key] = true;
-      } else {
-        args.flags[key] = next;
-        i++;
-      }
+      const next = args[i + 1];
+      if (!next || next.startsWith('-')) { opts[key] = true; i++; }
+      else { opts[key] = next; i += 2; }
     } else if (a.startsWith('-') && a.length === 2) {
       const key = a.slice(1);
-      const next = argv[i + 1];
-      if (!next || next.startsWith('-')) {
-        args.flags[key] = true;
-      } else {
-        args.flags[key] = next;
-        i++;
-      }
+      const next = args[i + 1];
+      if (!next || next.startsWith('-')) { opts[key] = true; i++; }
+      else { opts[key] = next; i += 2; }
     } else {
-      args._.push(a);
+      opts._.push(a); i++;
     }
-    i++;
   }
-  return args;
+  return opts;
 }
 
-// ─── Templates ──────────────────────────────────────────────────────────────
-const TEMPLATES = {
-  'social-teaser': {
-    speed: 'blazing', duration: 15, viewport: 'desktop', theme: 'dark',
-    cursor: true, hideScrollbar: true, music: { track: 'upbeat-tech', volume: 0.3 },
-    export: { format: 'mp4', quality: 'high', aspectRatio: '16:9' },
-  },
-  'product-demo': {
-    speed: 'medium', duration: 30, viewport: 'desktop', theme: 'dark',
-    cursor: true, hideScrollbar: true, music: { track: 'corporate-clean', volume: 0.2 },
-    export: { format: 'mp4', quality: 'high', aspectRatio: '16:9' },
-  },
-  'landing-page': {
-    speed: 'slow', duration: 45, viewport: 'widescreen', theme: 'light',
-    cursor: false, hideScrollbar: true, music: { track: 'cinematic-reveal', volume: 0.25 },
-    export: { format: 'mp4', quality: 'ultra', aspectRatio: '16:9' },
-  },
-  'app-walkthrough': {
-    speed: 'medium', duration: 60, viewport: 'desktop', theme: 'dark',
-    cursor: true, hideScrollbar: true, music: { track: 'chill-lofi', volume: 0.2 },
-    export: { format: 'mp4', quality: 'high', aspectRatio: '16:9' },
-  },
-  'tiktok-reel': {
-    speed: 'blazing', duration: 15, viewport: 'mobile', theme: 'dark',
-    cursor: true, hideScrollbar: true, music: { track: 'playful-bounce', volume: 0.35 },
-    export: { format: 'mp4', quality: 'high', aspectRatio: '9:16' },
-  },
+// ─── Colors ───────────────────────────────────────────────────────────────────
+const c = {
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
+  blue: '\x1b[34m', cyan: '\x1b[36m', green: '\x1b[32m',
+  yellow: '\x1b[33m', red: '\x1b[31m', gray: '\x1b[90m',
+  magenta: '\x1b[35m',
 };
+const clr = (color, text) => `${c[color]}${text}${c.reset}`;
+const log = (...a) => console.log(...a);
+const info = (msg) => log(`  ${clr('cyan', '›')} ${msg}`);
+const ok = (msg) => log(`  ${clr('green', '✓')} ${msg}`);
+const warn = (msg) => log(`  ${clr('yellow', '⚠')} ${msg}`);
+const err = (msg) => { log(`  ${clr('red', '✗')} ${msg}`); process.exit(1); };
 
-const SPEED_MAP = { slow: { step: 3, delay: 0.02 }, medium: { step: 8, delay: 0.012 }, fast: { step: 20, delay: 0.006 }, blazing: { step: 55, delay: 0.003 } };
-const VIEWPORT_MAP = { mobile: { w: 375, h: 667 }, tablet: { w: 768, h: 1024 }, desktop: { w: 1280, h: 720 }, widescreen: { w: 1920, h: 1080 } };
+// ─── Help ─────────────────────────────────────────────────────────────────────
+function showHelp() {
+  log(`
+${clr('bold', clr('blue', '🎬 DemoReel CLI'))} ${clr('gray', 'v2.0')}
+${clr('gray', 'Record any webpage as a polished scroll-through video.')}
 
-// ─── Local recording (uses Playwright directly) ────────────────────────────
-async function recordLocal(url, opts) {
-  let recorder;
-  try {
-    recorder = require('./recorder');
-  } catch (e) {
-    console.error('❌ recorder.js not found. Run from the demoreel directory or install globally.');
-    process.exit(1);
-  }
-  
-  const config = {
-    url,
-    viewport: opts.viewport || 'desktop',
-    theme: opts.theme || 'dark',
-    speed: opts.speed || 'fast',
-    duration: parseInt(opts.duration) || 30,
-    cursor: opts.cursor !== 'false' && opts.cursor !== false,
-    scrollTarget: opts['scroll-target'] || 'auto',
-    hideScrollbar: true,
-    music: opts.music ? { track: opts.music, volume: parseFloat(opts['music-volume'] || '0.3') } : { track: 'none' },
-    privacy: {},
-    branding: { showBadge: opts.badge !== 'false' },
-    export: {
-      format: opts.format || 'mp4',
-      quality: opts.quality || 'high',
-    },
-  };
+${clr('bold', 'USAGE')}
+  demoreel ${clr('cyan', 'record')} <url> [options]
+  demoreel ${clr('cyan', 'script')} <url> [options]
+  demoreel ${clr('cyan', 'presets')}
+  demoreel ${clr('cyan', 'help')}
 
-  // Apply template if specified
-  if (opts.template && TEMPLATES[opts.template]) {
-    Object.assign(config, TEMPLATES[opts.template]);
-    config.url = url;
-  }
+${clr('bold', 'RECORD OPTIONS')}
+  ${clr('yellow', '-o, --output')}        Output file path (default: ./demoreel-output.mp4)
+  ${clr('yellow', '--speed')}             slow | medium | fast | blazing (default: medium)
+  ${clr('yellow', '--viewport')}          mobile | tablet | desktop | widescreen (default: desktop)
+  ${clr('yellow', '--theme')}             dark | light (default: dark)
+  ${clr('yellow', '--duration')}          Max duration in seconds (default: 30)
+  ${clr('yellow', '--cursor')}            Show glowing cursor (default: true)
+  ${clr('yellow', '--no-cursor')}         Disable cursor
+  ${clr('yellow', '--music')}             Music track ID or "none" (default: none)
+  ${clr('yellow', '--music-volume')}      Music volume 0.0-1.0 (default: 0.3)
+  ${clr('yellow', '--quality')}           low | medium | high | ultra (default: high)
+  ${clr('yellow', '--format')}            mp4 | webm (default: mp4)
+  ${clr('yellow', '--voiceover')}         Voiceover text (requires ELEVENLABS_API_KEY)
+  ${clr('yellow', '--voice')}             Voice preset: alloy|echo|fable|onyx|nova|shimmer
+  ${clr('yellow', '--blur')}              CSS selectors to blur (comma-separated)
+  ${clr('yellow', '--watermark')}         Add "Made with DemoReel" badge
+  ${clr('yellow', '--fingerprint')}       Embed invisible fingerprint (default: true)
+  ${clr('yellow', '--template')}          product-demo | landing-page | social-teaser | app-walkthrough
+  ${clr('yellow', '--server')}            Remote DemoReel server URL (enables remote mode)
+  ${clr('yellow', '--scroll-target')}     CSS selector for scrollable container (default: auto)
+  ${clr('yellow', '--interactions')}      JSON array of interactions (click/type/wait/scroll-to)
+  ${clr('yellow', '--open')}              Open output in system viewer when done
 
-  // Privacy/blur
-  if (opts.blur) {
-    config.privacy.blur = opts.blur.split(',').map(s => s.trim());
-  }
-  if (opts['auto-detect'] !== 'false') {
-    config.privacy.autoDetect = true;
-  }
+${clr('bold', 'SCRIPT OPTIONS')}
+  ${clr('yellow', '--tone')}              professional | casual | exciting | technical
+  ${clr('yellow', '--purpose')}           product-demo | tutorial | showcase | teaser
+  ${clr('yellow', '--duration')}          Target duration in seconds
 
-  const outputPath = opts.o || opts.output || 'recording.mp4';
-  
-  console.log(`\n🎬 DemoReel CLI\n`);
-  console.log(`  URL:      ${url}`);
-  console.log(`  Template: ${opts.template || 'custom'}`);
-  console.log(`  Speed:    ${config.speed}`);
-  console.log(`  Duration: ${config.duration}s`);
-  console.log(`  Output:   ${outputPath}\n`);
+${clr('bold', 'EXAMPLES')}
+  ${clr('gray', '# Quick record')}
+  demoreel record https://example.com -o demo.mp4
 
-  try {
-    const result = await recorder.record(config);
-    
-    // Move/rename output
-    if (result && result !== outputPath) {
-      fs.copyFileSync(result, outputPath);
-    }
-    
-    const stat = fs.statSync(outputPath);
-    console.log(`\n✅ Saved: ${outputPath} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`);
-  } catch (err) {
-    console.error(`\n❌ Recording failed: ${err.message}`);
-    process.exit(1);
-  }
+  ${clr('gray', '# Social teaser template (9:16, fast, 15s)')}
+  demoreel record https://myapp.com --template social-teaser -o teaser.mp4
+
+  ${clr('gray', '# Local dev server')}
+  demoreel record http://localhost:3000 -o local-demo.mp4
+
+  ${clr('gray', '# Local HTML file')}
+  demoreel record file:///path/to/index.html -o demo.mp4
+
+  ${clr('gray', '# With music + voiceover')}
+  demoreel record https://example.com --music upbeat-tech --voice alloy --voiceover "Check this out!" -o demo.mp4
+
+  ${clr('gray', '# Privacy blur')}
+  demoreel record https://app.com --blur ".api-key,.password" -o demo.mp4
+
+  ${clr('gray', '# Remote mode (use running DemoReel server)')}
+  demoreel record https://example.com --server https://demoreel.railway.app -o demo.mp4
+
+  ${clr('gray', '# Generate AI script for a URL')}
+  demoreel script https://example.com --tone exciting --duration 30
+
+  ${clr('gray', '# List all presets')}
+  demoreel presets
+`);
 }
 
-// ─── Remote recording (calls DemoReel API server) ──────────────────────────
-async function recordRemote(url, opts) {
-  const serverUrl = opts.server || 'http://localhost:3000';
-  
-  const config = {
-    url,
-    viewport: opts.viewport || 'desktop',
-    theme: opts.theme || 'dark',
-    speed: opts.speed || 'fast',
-    duration: parseInt(opts.duration) || 30,
-    cursor: opts.cursor !== 'false',
-    music: opts.music ? { track: opts.music, volume: parseFloat(opts['music-volume'] || '0.3') } : undefined,
-  };
-
-  if (opts.template && TEMPLATES[opts.template]) {
-    Object.assign(config, TEMPLATES[opts.template]);
-    config.url = url;
-  }
-
-  console.log(`\n🎬 DemoReel CLI (remote: ${serverUrl})\n`);
-  console.log(`  URL: ${url}`);
-  console.log(`  Submitting recording job...\n`);
-
-  const lib = serverUrl.startsWith('https') ? https : http;
-  const body = JSON.stringify(config);
-
-  // POST /api/record
-  const jobRes = await new Promise((resolve, reject) => {
-    const req = lib.request(`${serverUrl}/api/record`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    }, res => {
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
+function httpRequest(url, method, body) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port,
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+      },
+      timeout: 10000,
+    };
+    const req = lib.request(options, (res) => {
       let data = '';
-      res.on('data', c => data += c);
+      res.on('data', c => { data += c; });
       res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch { reject(new Error(data)); }
+        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, body: data }); }
       });
     });
     req.on('error', reject);
-    req.write(body);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+    if (bodyStr) req.write(bodyStr);
     req.end();
   });
+}
 
-  if (jobRes.error) {
-    console.error(`❌ ${jobRes.error}`);
-    process.exit(1);
-  }
-
-  const jobId = jobRes.id;
-  console.log(`  Job ID: ${jobId}`);
-  console.log(`  Status: ${jobRes.status}\n`);
-
-  // Poll status
-  let status = jobRes.status;
-  while (status === 'queued' || status === 'processing') {
-    await new Promise(r => setTimeout(r, 2000));
-    const statusRes = await new Promise((resolve, reject) => {
-      lib.get(`${serverUrl}/api/status/${jobId}`, res => {
-        let data = '';
-        res.on('data', c => data += c);
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)); } catch { reject(new Error(data)); }
-        });
-      }).on('error', reject);
-    });
-    status = statusRes.status;
-    if (statusRes.progress) process.stdout.write(`\r  Progress: ${statusRes.progress}%`);
-  }
-
-  console.log(`\n  Status: ${status}`);
-
-  if (status !== 'completed') {
-    console.error(`\n❌ Recording failed with status: ${status}`);
-    process.exit(1);
-  }
-
-  // Download
-  const outputPath = opts.o || opts.output || 'recording.mp4';
-  console.log(`  Downloading → ${outputPath}...`);
-
-  await new Promise((resolve, reject) => {
+// Download binary file
+function downloadFile(url, outputPath) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const lib = parsed.protocol === 'https:' ? https : http;
     const file = fs.createWriteStream(outputPath);
-    lib.get(`${serverUrl}/api/download/${jobId}`, res => {
+    lib.get(url, (res) => {
       res.pipe(file);
-      file.on('finish', () => { file.close(resolve); });
-    }).on('error', reject);
+      file.on('finish', () => { file.close(); resolve(); });
+    }).on('error', (e) => { fs.unlink(outputPath, () => {}); reject(e); });
+  });
+}
+
+// ─── Templates ────────────────────────────────────────────────────────────────
+const TEMPLATES = {
+  'product-demo':    { speed: 'medium', viewport: 'desktop', duration: 30, theme: 'dark',  cursor: true,  music: 'upbeat-tech',    musicVolume: 0.25, quality: 'high' },
+  'landing-page':    { speed: 'slow',   viewport: 'desktop', duration: 20, theme: 'dark',  cursor: false, music: 'corporate-clean', musicVolume: 0.3,  quality: 'high' },
+  'social-teaser':   { speed: 'fast',   viewport: 'mobile',  duration: 15, theme: 'dark',  cursor: false, music: 'playful-bounce',  musicVolume: 0.35, quality: 'high' },
+  'app-walkthrough': { speed: 'medium', viewport: 'desktop', duration: 45, theme: 'dark',  cursor: true,  music: 'chill-lofi',      musicVolume: 0.2,  quality: 'ultra' },
+};
+
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+function progressBar(pct, width = 30) {
+  const filled = Math.round((pct / 100) * width);
+  const bar = '█'.repeat(filled) + '░'.repeat(width - filled);
+  return `[${clr('blue', bar)}] ${clr('bold', pct + '%')}`;
+}
+
+// ─── Remote record mode ───────────────────────────────────────────────────────
+async function remoteRecord(serverUrl, payload, outputPath) {
+  info(`Using remote server: ${serverUrl}`);
+
+  // Start job
+  const startRes = await httpRequest(`${serverUrl}/api/record`, 'POST', payload);
+  if (startRes.status !== 202 || startRes.body.error) {
+    err(`Server error: ${startRes.body.error || startRes.status}`);
+  }
+
+  const jobId = startRes.body.id;
+  info(`Job started: ${jobId}`);
+
+  // Poll
+  let lastMsg = '';
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    const statusRes = await httpRequest(`${serverUrl}/api/status/${jobId}`, 'GET');
+    const job = statusRes.body;
+
+    const msg = job.progressMessage || '';
+    const pct = job.progress || 0;
+    if (msg !== lastMsg || pct > 0) {
+      process.stdout.write(`\r  ${progressBar(pct)} ${clr('gray', msg.padEnd(30))}`);
+      lastMsg = msg;
+    }
+
+    if (job.status === 'completed') {
+      process.stdout.write('\n');
+      ok('Recording complete!');
+      info(`Downloading video...`);
+      await downloadFile(`${serverUrl}${job.downloadUrl}`, outputPath);
+      ok(`Saved to ${clr('green', outputPath)}`);
+      return;
+    }
+
+    if (job.status === 'failed') {
+      process.stdout.write('\n');
+      err(`Recording failed: ${job.error}`);
+    }
+  }
+}
+
+// ─── Local record mode ────────────────────────────────────────────────────────
+async function localRecord(url, opts, outputPath) {
+  const { record } = require('./recorder');
+  const { generateVoiceover } = require('./voiceover');
+  const { applyPrivacyProtection } = require('./protection');
+
+  info(`Recording (local mode): ${url}`);
+
+  // Progress display
+  let lastPct = 0;
+  const onProgress = (msg) => {
+    let pct = lastPct;
+    if (msg.includes('browser')) pct = 10;
+    else if (msg.includes('Loading')) pct = 20;
+    else if (msg.includes('interact')) pct = 35;
+    else if (msg.includes('Scroll')) pct = 55;
+    else if (msg.includes('Encoding')) pct = 75;
+    else if (msg.includes('ffmpeg')) pct = 85;
+    else if (msg.includes('Done')) pct = 100;
+    lastPct = pct;
+    process.stdout.write(`\r  ${progressBar(pct)} ${clr('gray', msg.slice(0, 40).padEnd(40))}`);
+  };
+
+  const musicTrack = opts.music && opts.music !== 'none' ? opts.music : false;
+
+  await record({
+    url,
+    speed: opts.speed || 'medium',
+    viewport: opts.viewport || 'desktop',
+    theme: opts.theme || 'dark',
+    cursor: opts.cursor !== false,
+    duration: parseInt(opts.duration) || 30,
+    music: musicTrack,
+    musicVolume: parseFloat(opts.musicVolume) || 0.3,
+    scrollTarget: opts.scrollTarget || 'auto',
+    hideScrollbar: true,
+    interactions: opts.interactions || [],
+    branding: {
+      showBadge: opts.watermark === true,
+    },
+    privacy: {
+      blur: opts.blur ? opts.blur.split(',').map(s => s.trim()) : [],
+      autoDetect: opts.autoDetect !== false,
+    },
+    protection: {
+      fingerprint: opts.fingerprint !== false,
+    },
+    export: {
+      quality: opts.quality || 'high',
+      format: opts.format || 'mp4',
+    },
+    outputPath,
+    onProgress,
   });
 
-  const stat = fs.statSync(outputPath);
-  console.log(`\n✅ Saved: ${outputPath} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`);
+  process.stdout.write('\n');
 }
 
-// ─── Commands ───────────────────────────────────────────────────────────────
-async function cmdRecord(args) {
-  const url = args._[1];
-  if (!url) {
-    console.error('Usage: demoreel record <url> [options]');
-    process.exit(1);
+// ─── Command: presets ─────────────────────────────────────────────────────────
+async function cmdPresets(opts) {
+  const serverUrl = opts.server;
+  if (serverUrl) {
+    const res = await httpRequest(`${serverUrl}/api/presets`, 'GET');
+    console.log(JSON.stringify(res.body, null, 2));
+    return;
   }
 
-  const opts = args.flags;
-  
-  if (opts.server) {
-    await recordRemote(url, opts);
-  } else {
-    await recordLocal(url, opts);
-  }
+  // Local
+  const { TRACK_METADATA } = require('./musicGen');
+  const { getVoiceList } = require('./voiceover');
+
+  log('\n' + clr('bold', '🎵 Music Tracks'));
+  TRACK_METADATA.forEach(t => log(`  ${clr('cyan', t.id.padEnd(22))} ${clr('gray', t.mood.padEnd(14))} ${t.description}`));
+
+  log('\n' + clr('bold', '🎤 Voices'));
+  getVoiceList().forEach(v => log(`  ${clr('cyan', v.id.padEnd(10))} ${clr('gray', v.name.padEnd(10))} ${v.style}`));
+
+  log('\n' + clr('bold', '📐 Viewports'));
+  ['mobile (375×667)', 'tablet (768×1024)', 'desktop (1280×720)', 'widescreen (1920×1080)']
+    .forEach(v => log(`  ${clr('cyan', '•')} ${v}`));
+
+  log('\n' + clr('bold', '🎨 Templates'));
+  Object.entries(TEMPLATES).forEach(([id, cfg]) =>
+    log(`  ${clr('cyan', id.padEnd(18))} speed=${cfg.speed}, ${cfg.viewport}, ${cfg.duration}s, music=${cfg.music}`)
+  );
+  log('');
 }
 
-function cmdPresets() {
-  console.log('\n🎬 DemoReel Presets\n');
-  
-  console.log('📋 Templates:');
-  for (const [id, t] of Object.entries(TEMPLATES)) {
-    console.log(`  ${id.padEnd(20)} ${t.speed.padEnd(8)} ${t.duration}s  ${t.export.aspectRatio}  🎵 ${t.music.track}`);
+// ─── Command: script ─────────────────────────────────────────────────────────
+async function cmdScript(opts) {
+  const url = opts._[1];
+  if (!url) err('URL required. Usage: demoreel script <url>');
+
+  const serverUrl = opts.server;
+  const payload = {
+    url,
+    purpose: opts.purpose || 'product-demo',
+    duration: parseInt(opts.duration) || 30,
+    tone: opts.tone || 'professional',
+  };
+
+  if (serverUrl) {
+    const res = await httpRequest(`${serverUrl}/api/script/generate`, 'POST', payload);
+    if (res.body.error) err(res.body.error);
+    console.log('\n' + clr('bold', '📝 Generated Script:\n'));
+    console.log(res.body.script);
+    return;
   }
 
-  console.log('\n🎵 Music tracks:');
+  // Local
+  const { generateScript } = require('./scriptGen');
+  info(`Generating script for ${url}...`);
   try {
-    const { TRACK_METADATA } = require('./musicGen');
-    TRACK_METADATA.forEach(t => {
-      console.log(`  ${t.id.padEnd(22)} ${t.mood.padEnd(14)} ${t.duration}s`);
-    });
+    const result = await generateScript(payload);
+    log('\n' + clr('bold', '📝 Generated Script:\n'));
+    log(result.script);
+    if (result.sections && result.sections.length > 0) {
+      log('\n' + clr('bold', '📍 Sections:'));
+      result.sections.forEach(s => log(`  ${clr('gray', String(s.scrollPercent + '%').padEnd(6))} ${s.text.slice(0, 80)}${s.text.length > 80 ? '…' : ''}`));
+    }
+  } catch (e) {
+    err(e.message);
+  }
+}
+
+// ─── Command: record ──────────────────────────────────────────────────────────
+async function cmdRecord(opts) {
+  const url = opts._[1];
+  if (!url) err('URL required. Usage: demoreel record <url> -o output.mp4');
+
+  // Validate URL (allow localhost, file://, LAN)
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+    const allowedProtocols = ['http:', 'https:', 'file:'];
+    if (!allowedProtocols.includes(parsedUrl.protocol)) {
+      err(`URL protocol not supported. Use http://, https://, or file://`);
+    }
   } catch {
-    console.log('  (run from demoreel directory to see tracks)');
+    err(`Invalid URL: ${url}`);
   }
 
-  console.log('\n⚡ Speeds: slow | medium | fast | blazing');
-  console.log('📱 Viewports: mobile | tablet | desktop | widescreen');
-  console.log('🎨 Themes: dark | light');
-  console.log('📐 Formats: mp4 | webm | gif');
-  console.log('');
-}
-
-function cmdScript(args) {
-  const url = args._[1];
-  if (!url) {
-    console.error('Usage: demoreel script <url> [--tone professional] [--duration 30]');
-    process.exit(1);
+  // Apply template if specified
+  let templateConfig = {};
+  if (opts.template) {
+    templateConfig = TEMPLATES[opts.template];
+    if (!templateConfig) err(`Unknown template: "${opts.template}". Try: demoreel presets`);
+    info(`Template: ${opts.template}`);
   }
-  console.log('⚠️  Script generation requires GEMINI_API_KEY. Use the web UI or API instead.');
-  console.log(`   POST /api/script/generate {"url": "${url}", "duration": ${args.flags.duration || 30}}`);
+
+  // Merge template + CLI opts (CLI overrides template)
+  const merged = { ...templateConfig, ...opts };
+
+  const outputPath = opts.o || opts.output || `demoreel-output-${Date.now()}.mp4`;
+  const absOutput = path.isAbsolute(outputPath) ? outputPath : path.join(process.cwd(), outputPath);
+
+  log(`\n  ${clr('bold', clr('blue', '🎬 DemoReel Recording'))}`);
+  info(`URL:      ${url}`);
+  info(`Viewport: ${merged.viewport || 'desktop'}`);
+  info(`Speed:    ${merged.speed || 'medium'}`);
+  info(`Duration: ${merged.duration || 30}s`);
+  info(`Music:    ${merged.music || 'none'}`);
+  info(`Output:   ${absOutput}`);
+  log('');
+
+  const serverUrl = merged.server;
+
+  // Parse interactions if given as JSON string
+  let interactions = [];
+  if (merged.interactions) {
+    try { interactions = JSON.parse(merged.interactions); }
+    catch { warn('Could not parse --interactions JSON, ignoring.'); }
+  }
+
+  const payload = {
+    url: parsedUrl.href,
+    viewport: merged.viewport || 'desktop',
+    speed: merged.speed || 'medium',
+    theme: merged.theme || 'dark',
+    duration: parseInt(merged.duration) || 30,
+    cursor: merged['no-cursor'] ? false : (merged.cursor !== false),
+    music: {
+      track: merged.music || 'none',
+      volume: parseFloat(merged.musicVolume || merged['music-volume']) || 0.3,
+    },
+    branding: { showBadge: Boolean(merged.watermark) },
+    privacy: {
+      blur: merged.blur ? merged.blur.split(',').map(s => s.trim()) : [],
+      autoDetect: merged.autoDetect !== false,
+    },
+    protection: { fingerprint: merged.fingerprint !== false },
+    export: {
+      quality: merged.quality || 'high',
+      format: merged.format || 'mp4',
+    },
+    interactions,
+    scrollTarget: merged.scrollTarget || merged['scroll-target'] || 'auto',
+  };
+
+  try {
+    if (serverUrl) {
+      await remoteRecord(serverUrl, payload, absOutput);
+    } else {
+      await localRecord(parsedUrl.href, {
+        ...merged,
+        interactions,
+        scrollTarget: merged.scrollTarget || merged['scroll-target'],
+      }, absOutput);
+    }
+
+    ok(`Done! Video saved to: ${clr('green', clr('bold', absOutput))}`);
+
+    // Show file size
+    if (fs.existsSync(absOutput)) {
+      const size = fs.statSync(absOutput).size;
+      info(`File size: ${(size / 1024 / 1024).toFixed(1)}MB`);
+    }
+
+    // Open if requested
+    if (merged.open) {
+      const { exec } = require('child_process');
+      const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+      exec(`${opener} "${absOutput}"`);
+    }
+  } catch (e) {
+    err(`Recording failed: ${e.message}`);
+  }
 }
 
-function showHelp() {
-  console.log(`
-🎬 DemoReel — Automated website demo video recorder
-
-Commands:
-  demoreel record <url> [options]    Record a scroll-through video
-  demoreel script <url> [options]    Generate voiceover script (AI)
-  demoreel presets                   List templates, music, and options
-  demoreel post [options]            Post to X/Twitter (coming soon)
-
-Record options:
-  -o, --output <file>      Output file (default: recording.mp4)
-  --template <name>        Use a preset template (social-teaser, product-demo, etc.)
-  --speed <speed>          Scroll speed: slow|medium|fast|blazing
-  --viewport <size>        Viewport: mobile|tablet|desktop|widescreen
-  --theme <theme>          Color scheme: dark|light
-  --cursor                 Show glowing cursor (default: true)
-  --duration <secs>        Max duration in seconds
-  --music <track>          Background music track name
-  --music-volume <0-1>     Music volume (default: 0.3)
-  --blur <selectors>       CSS selectors to blur (comma-separated)
-  --auto-detect            Auto-detect & blur sensitive data (default: true)
-  --format <fmt>           Output format: mp4|webm|gif
-  --quality <q>            Quality: low|medium|high|ultra
-  --scroll-target <sel>    CSS selector for scroll container (default: auto)
-  --server <url>           Use remote DemoReel server instead of local
-
-Examples:
-  # Quick social media teaser
-  demoreel record https://myapp.com --template social-teaser -o tweet.mp4
-
-  # Record localhost with blur
-  demoreel record http://localhost:3000 --blur ".env-var,#api-key" -o demo.mp4
-
-  # Record local HTML file
-  demoreel record file:///home/dev/index.html -o local-demo.mp4
-
-  # Full pipeline via remote server
-  demoreel record https://app.com --server https://demoreel.up.railway.app -o out.mp4
-  `);
-}
-
-// ─── Main ───────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  const args = parseArgs(process.argv);
-  const cmd = args._[0];
+  const opts = parseArgs(process.argv);
+  const cmd = opts._[0];
 
-  switch (cmd) {
-    case 'record': await cmdRecord(args); break;
-    case 'script': cmdScript(args); break;
-    case 'presets': cmdPresets(); break;
-    case 'post': console.log('🚧 X/Twitter posting coming soon. Need API credentials.'); break;
-    case 'help': case '--help': case '-h': showHelp(); break;
-    default: showHelp();
+  if (!cmd || cmd === 'help' || opts.help || opts.h) {
+    showHelp();
+    return;
   }
+
+  if (cmd === 'presets' || cmd === 'list') {
+    await cmdPresets(opts);
+    return;
+  }
+
+  if (cmd === 'script') {
+    await cmdScript(opts);
+    return;
+  }
+
+  if (cmd === 'record') {
+    await cmdRecord(opts);
+    return;
+  }
+
+  // Shorthand: if first arg looks like a URL, treat as record
+  if (cmd.startsWith('http') || cmd.startsWith('file://')) {
+    opts._.unshift('record');
+    await cmdRecord(opts);
+    return;
+  }
+
+  err(`Unknown command: "${cmd}". Run "demoreel help" for usage.`);
 }
 
-main().catch(err => {
-  console.error(`\n❌ ${err.message}`);
+main().catch(e => {
+  console.error(clr('red', `Fatal: ${e.message}`));
   process.exit(1);
 });

@@ -8,6 +8,12 @@ const { execSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const {
+  getProtectionScript,
+  getFFmpegProtectionFilters,
+  embedFingerprintMetadata,
+  generateFingerprintSeed,
+} = require('./protection');
 
 // Viewport presets
 const VIEWPORTS = {
@@ -41,6 +47,8 @@ const SPEEDS = {
  * @param {boolean} opts.hideScrollbar
  * @param {Array}   opts.interactions  pre-recording interactions
  * @param {object}  opts.branding      watermark config
+ * @param {object}  opts.privacy       { blur[], autoDetect, blurStrength }
+ * @param {object}  opts.protection    { fingerprint, watermarkText }
  * @param {object}  opts.export        export options
  * @param {string}  opts.outputPath  final MP4 path
  * @param {function} opts.onProgress optional progress callback
@@ -61,6 +69,8 @@ async function record(opts) {
     interactions = [],
     branding = {},
     export: exportOpts = {},
+    privacy = {},
+    protection = {},
     outputPath,
     onProgress = () => {},
   } = opts;
@@ -103,39 +113,57 @@ async function record(opts) {
 
     const page = await context.newPage();
 
-    // Inject global styles + cursor
+    // Generate fingerprint seed for this recording
+    const fpSeed = generateFingerprintSeed();
+
+    // Inject base styles + cursor + protection
+    const baseStyles = `
+      ${hideScrollbar ? '::-webkit-scrollbar { display: none !important; } * { scrollbar-width: none !important; }' : ''}
+      ${cursor ? '* { cursor: none !important; }' : ''}
+    `;
+
+    const cursorScript = cursor ? `
+      const cur = document.createElement('div');
+      cur.id = 'demoreel-cursor';
+      cur.style.cssText = \`
+        position: fixed; z-index: 2147483647; pointer-events: none;
+        width: 26px; height: 26px; border-radius: 50%;
+        background: rgba(255,255,255,0.93);
+        border: 3px solid rgba(0,150,255,0.85);
+        box-shadow: 0 0 14px rgba(0,150,255,0.6), 0 0 28px rgba(0,150,255,0.3);
+        transform: translate(-50%, -50%);
+        transition: left 0.04s linear, top 0.04s linear;
+        left: 50%; top: 50%;
+      \`;
+      document.addEventListener('DOMContentLoaded', () => {
+        if (document.body) document.body.appendChild(cur);
+      });
+      document.addEventListener('mousemove', e => {
+        cur.style.left = e.clientX + 'px';
+        cur.style.top = e.clientY + 'px';
+      });
+    ` : '';
+
     await page.addInitScript(`
       (() => {
         const style = document.createElement('style');
-        style.textContent = \`
-          ${hideScrollbar ? '::-webkit-scrollbar { display: none !important; } * { scrollbar-width: none !important; }' : ''}
-          ${cursor ? '* { cursor: none !important; }' : ''}
-        \`;
+        style.textContent = \`${baseStyles}\`;
         document.head.appendChild(style);
-
-        ${cursor ? `
-        const cur = document.createElement('div');
-        cur.id = 'demoreel-cursor';
-        cur.style.cssText = \`
-          position: fixed; z-index: 2147483647; pointer-events: none;
-          width: 26px; height: 26px; border-radius: 50%;
-          background: rgba(255,255,255,0.93);
-          border: 3px solid rgba(0,150,255,0.85);
-          box-shadow: 0 0 14px rgba(0,150,255,0.6), 0 0 28px rgba(0,150,255,0.3);
-          transform: translate(-50%, -50%);
-          transition: left 0.04s linear, top 0.04s linear;
-          left: 50%; top: 50%;
-        \`;
-        document.addEventListener('DOMContentLoaded', () => {
-          if (document.body) document.body.appendChild(cur);
-        });
-        document.addEventListener('mousemove', e => {
-          cur.style.left = e.clientX + 'px';
-          cur.style.top = e.clientY + 'px';
-        });
-        ` : ''}
+        ${cursorScript}
       })();
     `);
+
+    // Inject protection script (privacy blur + fingerprint + badge)
+    const protectionScript = getProtectionScript({
+      blur: privacy.blur || [],
+      autoDetect: privacy.autoDetect !== false,
+      blurStrength: privacy.blurStrength || 'medium',
+      showBadge: branding.showBadge || false,
+      fingerprint: protection.fingerprint !== false,
+      watermarkText: branding.watermarkText || 'Made with DemoReel',
+      fingerprintSeed: fpSeed,
+    });
+    await page.addInitScript(protectionScript);
 
     onProgress('Loading page...');
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
@@ -323,9 +351,16 @@ async function record(opts) {
       musicVolume: musicVolume || 0.3,
       vp,
       branding,
+      protection,
+      fpSeed,
       exportOpts,
       onProgress,
     });
+
+    // Embed fingerprint in MP4 metadata
+    if (protection.fingerprint !== false) {
+      embedFingerprintMetadata(outputPath, fpSeed);
+    }
 
     onProgress('Done!');
   } finally {
@@ -339,9 +374,9 @@ async function record(opts) {
 }
 
 /**
- * ffmpeg post-processing: trim, speed, music, branding, encode
+ * ffmpeg post-processing: trim, speed, music, branding, protection, encode
  */
-function ffmpegProcess({ rawVideo, outputPath, rawDur, durationCap, musicFile, musicVolume, vp, branding, exportOpts, onProgress }) {
+function ffmpegProcess({ rawVideo, outputPath, rawDur, durationCap, musicFile, musicVolume, vp, branding, protection, fpSeed, exportOpts, onProgress }) {
   return new Promise((resolve, reject) => {
     const speed = rawDur > durationCap ? rawDur / durationCap : 1.0;
     const outDur = rawDur / speed;
@@ -353,16 +388,17 @@ function ffmpegProcess({ rawVideo, outputPath, rawDur, durationCap, musicFile, m
     const crfMap = { low: 32, medium: 26, high: 22, ultra: 18 };
     const crf = crfMap[quality] || 22;
 
+    // Get protection filters
+    const protFilters = getFFmpegProtectionFilters({
+      showBadge: branding && branding.showBadge,
+      watermarkText: (branding && branding.watermarkText) || 'Made with DemoReel',
+      fingerprint: protection && protection.fingerprint !== false,
+      fingerprintSeed: fpSeed,
+    });
+
     // Build video filter chain
-    let vFilter = `[0:v]setpts=PTS/${speed},fade=t=in:st=0:d=0.2,fade=t=out:st=${fadeOutV}:d=0.6`;
-
-    // Add badge overlay if requested
-    if (branding && branding.showBadge) {
-      // Add "Made with DemoReel" text overlay
-      vFilter += `,drawtext=text='Made with DemoReel':fontsize=14:fontcolor=white@0.6:x=w-tw-10:y=h-th-10`;
-    }
-
-    vFilter += '[v]';
+    const vFilterParts = [`setpts=PTS/${speed}`, `fade=t=in:st=0:d=0.2`, `fade=t=out:st=${fadeOutV}:d=0.6`, ...protFilters];
+    let vFilter = `[0:v]${vFilterParts.join(',')}[v]`;
 
     const args = ['-y'];
 

@@ -1,8 +1,11 @@
 {
   "name": "demoreel",
   "version": "2.0.0",
-  "description": "Agent-friendly automated website demo video recorder — CLI + API + Web UI",
+  "description": "Agent-friendly demo video studio — record any webpage as a polished scroll-through video",
   "main": "server.js",
+  "bin": {
+    "demoreel": "./cli.js"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
@@ -16,18 +19,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "bin": {
-    "demoreel": "./cli.js"
-  },
-  "keywords": [
-    "demo",
-    "video",
-    "recorder",
-    "screenshot",
-    "scroll",
-    "cli",
-    "api",
-    "agent"
-  ]
+  }
 }
