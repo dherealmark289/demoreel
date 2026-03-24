@@ -1,0 +1,6 @@
+node_modules/
+*.mp4
+*.webm
+.env
+.DS_Store
+npm-debug.log*
