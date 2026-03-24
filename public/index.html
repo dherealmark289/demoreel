@@ -3,115 +3,179 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DemoReel by Maragakis AI</title>
+  <title>DemoReel — AI Demo Video Studio</title>
   <style>
-    /* ── Reset & base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg: #0d1117;
-      --bg2: #161b22;
-      --bg3: #1c2431;
-      --border: #30363d;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #2563eb;
-      --accent2: #7c3aed;
-      --success: #16a34a;
-      --error: #dc2626;
-      --pill-bg: #21262d;
-      --pill-active: #2563eb;
-      --pill-active-text: #fff;
+      --bg: #0d1117; --bg2: #161b22; --bg3: #1c2431; --bg4: #21262d;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --accent: #2563eb; --accent2: #7c3aed; --accent3: #0ea5e9;
+      --success: #16a34a; --error: #dc2626; --warn: #d97706;
     }
-
     html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; }
-
-    /* ── Layout ── */
-    .app { max-width: 780px; margin: 0 auto; padding: 40px 20px 80px; }
+    .app { max-width: 820px; margin: 0 auto; padding: 32px 20px 80px; }
 
     /* ── Header ── */
-    header { text-align: center; margin-bottom: 48px; }
-    .logo { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-    .logo-text { font-size: 1.5rem; font-weight: 700; background: linear-gradient(90deg, #fff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    header { text-align: center; margin-bottom: 40px; }
+    .logo { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .logo-text { font-size: 1.7rem; font-weight: 800; background: linear-gradient(90deg, #fff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .tagline { color: var(--muted); font-size: 0.95rem; }
+    .badge { display: inline-block; margin-top: 8px; padding: 3px 10px; background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.3); border-radius: 20px; font-size: 0.72rem; color: #93c5fd; letter-spacing: 0.05em; }
 
-    /* ── Card ── */
-    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 28px 28px 24px; margin-bottom: 20px; }
+    /* ── Wizard Steps ── */
+    .wizard-steps { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 32px; flex-wrap: wrap; gap: 4px; }
+    .step-item { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 10px; border-radius: 8px; transition: background 0.2s; }
+    .step-item:hover .step-num { border-color: var(--accent); }
+    .step-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700;
+      border: 2px solid var(--border); color: var(--muted);
+      transition: all 0.2s;
+    }
+    .step-name { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+    .step-item.active .step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .step-item.active .step-name { color: var(--text); }
+    .step-item.done .step-num { background: var(--success); border-color: var(--success); color: #fff; }
+    .step-item.done .step-name { color: #86efac; }
+    .step-sep { color: var(--border); font-size: 0.75rem; }
 
-    /* ── URL input ── */
-    .url-wrap { display: flex; gap: 12px; flex-wrap: wrap; }
+    /* ── Cards ── */
+    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; margin-bottom: 16px; }
+    .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+    .card-title span { font-size: 1rem; }
+
+    /* ── Step panels ── */
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    /* ── URL Input ── */
     .url-input {
-      flex: 1; min-width: 0;
-      background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
-      color: var(--text); font-size: 1rem; padding: 14px 16px;
-      outline: none; transition: border-color 0.2s;
+      width: 100%; background: var(--bg3); border: 1.5px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: 1.05rem; padding: 16px 18px;
+      outline: none; transition: border-color 0.2s; margin-bottom: 14px;
     }
     .url-input:focus { border-color: var(--accent); }
     .url-input::placeholder { color: var(--muted); }
 
-    /* ── Options ── */
-    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
-    @media (max-width: 560px) { .options-grid { grid-template-columns: 1fr; } }
-
-    .option-group label { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
-    .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* ── Pills ── */
+    .option-group { margin-bottom: 20px; }
+    .option-group label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; font-weight: 700; }
+    .pills { display: flex; flex-wrap: wrap; gap: 7px; }
     .pill {
-      padding: 6px 14px; border-radius: 20px;
-      background: var(--pill-bg); border: 1px solid var(--border);
-      color: var(--muted); font-size: 0.82rem; cursor: pointer;
-      transition: all 0.15s;
+      padding: 7px 15px; border-radius: 20px;
+      background: var(--bg4); border: 1px solid var(--border);
+      color: var(--muted); font-size: 0.83rem; cursor: pointer;
+      transition: all 0.15s; user-select: none;
     }
     .pill:hover { border-color: var(--accent); color: var(--text); }
     .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
-    /* Toggle */
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
-    .toggle-row label { font-size: 0.85rem; color: var(--text); }
-    .toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
+    /* ── Toggle ── */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .toggle-row label { font-size: 0.88rem; color: var(--text); }
+    .toggle-row .hint { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .toggle { position: relative; display: inline-block; width: 42px; height: 24px; }
     .toggle input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; inset: 0; background: var(--pill-bg); border-radius: 22px; transition: 0.25s; border: 1px solid var(--border); }
-    .slider::before { content: ''; position: absolute; height: 16px; width: 16px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: 0.25s; }
+    .slider { position: absolute; inset: 0; background: var(--bg4); border-radius: 24px; transition: 0.25s; border: 1px solid var(--border); cursor: pointer; }
+    .slider::before { content: ''; position: absolute; height: 18px; width: 18px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: 0.25s; }
     input:checked + .slider { background: var(--accent); border-color: var(--accent); }
     input:checked + .slider::before { transform: translateX(18px); }
 
-    /* ── Record button ── */
-    .record-btn {
-      display: block; width: 100%;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: #fff; border: none; border-radius: 12px;
-      padding: 16px; font-size: 1.05rem; font-weight: 700;
-      cursor: pointer; margin-top: 24px;
-      transition: opacity 0.2s, transform 0.1s;
-      letter-spacing: 0.02em;
+    /* ── Options Grid ── */
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 560px) { .options-grid { grid-template-columns: 1fr; } }
+
+    /* ── Music tracks ── */
+    .music-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .music-card {
+      background: var(--bg3); border: 1.5px solid var(--border); border-radius: 10px;
+      padding: 14px 16px; cursor: pointer; transition: all 0.15s;
     }
-    .record-btn:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
-    .record-btn:active:not(:disabled) { transform: translateY(0); }
-    .record-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .record-btn.loading { position: relative; overflow: hidden; }
-    .record-btn.loading::after {
-      content: '';
-      position: absolute; inset: 0;
+    .music-card:hover { border-color: var(--accent); }
+    .music-card.active { border-color: var(--accent); background: rgba(37,99,235,0.1); }
+    .music-card.none-card.active { border-color: var(--border); background: var(--bg3); }
+    .music-name { font-size: 0.88rem; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .music-mood { font-size: 0.73rem; color: var(--muted); }
+    .music-play { float: right; font-size: 1.1rem; cursor: pointer; opacity: 0.6; }
+    .music-play:hover { opacity: 1; }
+    .volume-row { display: flex; align-items: center; gap: 12px; }
+    .volume-row label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    input[type=range] { flex: 1; accent-color: var(--accent); }
+
+    /* ── Script area ── */
+    .script-textarea {
+      width: 100%; height: 130px; background: var(--bg3); border: 1.5px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: 0.9rem; padding: 14px 16px;
+      outline: none; resize: vertical; font-family: inherit; line-height: 1.5;
+      transition: border-color 0.2s;
+    }
+    .script-textarea:focus { border-color: var(--accent); }
+    .script-textarea::placeholder { color: var(--muted); }
+    .generate-btn {
+      margin-top: 10px; padding: 8px 18px; background: var(--bg4);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 0.83rem; cursor: pointer; transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .generate-btn:hover { border-color: var(--accent); color: #93c5fd; }
+    .generate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Voice cards ── */
+    .voices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-top: 14px; }
+    .voice-card {
+      background: var(--bg3); border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; cursor: pointer; transition: all 0.15s;
+    }
+    .voice-card:hover { border-color: var(--accent3); }
+    .voice-card.active { border-color: var(--accent3); background: rgba(14,165,233,0.1); }
+    .voice-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+    .voice-style { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Nav buttons ── */
+    .nav-row { display: flex; gap: 12px; margin-top: 24px; }
+    .btn-next, .btn-prev, .btn-record {
+      padding: 13px 24px; border-radius: 10px; font-size: 0.95rem;
+      font-weight: 700; cursor: pointer; transition: all 0.15s;
+      border: none;
+    }
+    .btn-next { background: var(--accent); color: #fff; flex: 1; }
+    .btn-next:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-prev { background: var(--bg4); border: 1px solid var(--border); color: var(--muted); }
+    .btn-prev:hover { border-color: var(--accent); color: var(--text); }
+    .btn-record {
+      flex: 1;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+    }
+    .btn-record:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+    .btn-record:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-record.loading { position: relative; overflow: hidden; }
+    .btn-record.loading::after {
+      content: ''; position: absolute; inset: 0;
       background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
       animation: shimmer 1.4s infinite;
     }
     @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 
     /* ── Progress ── */
-    .progress-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px; display: none; }
-    .progress-card.show { display: block; }
-    .progress-label { font-size: 0.85rem; color: var(--muted); margin-bottom: 10px; }
+    .progress-section { display: none; margin-bottom: 16px; }
+    .progress-section.show { display: block; }
+    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .progress-label { font-size: 0.85rem; color: var(--muted); }
+    .progress-pct { font-size: 0.85rem; color: var(--accent); font-weight: 700; }
     .progress-bar-wrap { background: var(--bg3); border-radius: 8px; height: 6px; overflow: hidden; }
-    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 8px; transition: width 0.4s; animation: progress-pulse 2s ease-in-out infinite; }
-    @keyframes progress-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
-    .progress-msg { margin-top: 10px; font-size: 0.85rem; color: var(--text); }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 8px; transition: width 0.4s ease; }
+    .progress-msg { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
 
     /* ── Result ── */
-    .result-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px; display: none; }
-    .result-card.show { display: block; }
-    .result-card h3 { font-size: 1rem; margin-bottom: 16px; color: #86efac; }
-    .video-player { width: 100%; border-radius: 10px; background: #000; display: block; max-height: 400px; }
+    .result-section { display: none; }
+    .result-section.show { display: block; }
+    .result-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+    .result-header h3 { font-size: 1rem; color: #86efac; }
+    video { width: 100%; border-radius: 10px; background: #000; display: block; max-height: 380px; }
     .result-actions { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
     .btn-download {
       flex: 1; padding: 12px; border-radius: 10px;
@@ -122,64 +186,119 @@
     .btn-download:hover { opacity: 0.88; }
     .btn-new {
       flex: 1; padding: 12px; border-radius: 10px;
-      background: var(--pill-bg); color: var(--text); border: 1px solid var(--border);
+      background: var(--bg4); color: var(--text); border: 1px solid var(--border);
       font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: border-color 0.2s;
     }
     .btn-new:hover { border-color: var(--accent); }
 
     /* ── Error ── */
-    .error-msg { margin-top: 14px; padding: 12px 16px; background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); border-radius: 8px; color: #fca5a5; font-size: 0.85rem; display: none; }
+    .error-msg {
+      margin-top: 12px; padding: 12px 16px;
+      background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3);
+      border-radius: 8px; color: #fca5a5; font-size: 0.83rem; display: none;
+    }
     .error-msg.show { display: block; }
 
+    /* ── Info box ── */
+    .info-box { padding: 12px 16px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.2); border-radius: 8px; font-size: 0.8rem; color: #93c5fd; margin-bottom: 16px; }
+
     /* ── Footer ── */
-    footer { text-align: center; color: var(--muted); font-size: 0.78rem; margin-top: 48px; }
+    footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 48px; }
     footer a { color: var(--muted); text-decoration: none; }
     footer a:hover { color: var(--text); }
 
-    /* ── Divider ── */
-    .section-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin-bottom: 16px; }
+    /* ── API hint ── */
+    .api-hint { margin-top: 24px; padding: 16px 18px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; }
+    .api-hint h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+    .api-code { background: var(--bg); border-radius: 6px; padding: 10px 14px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; color: #a5b4fc; overflow-x: auto; }
+
+    /* Interactions builder */
+    .interactions-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .interaction-item { display: flex; align-items: center; gap: 8px; background: var(--bg3); border-radius: 8px; padding: 8px 12px; font-size: 0.8rem; }
+    .interaction-item .type-badge { background: rgba(37,99,235,0.2); color: #93c5fd; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; }
+    .interaction-item .details { color: var(--muted); flex: 1; }
+    .interaction-item .remove-btn { cursor: pointer; color: var(--muted); font-size: 1.1rem; padding: 0 4px; }
+    .interaction-item .remove-btn:hover { color: #f87171; }
+    .add-interaction-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .add-interaction-row select, .add-interaction-row input { 
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 7px;
+      color: var(--text); font-size: 0.82rem; padding: 7px 10px; outline: none;
+    }
+    .add-interaction-row select:focus, .add-interaction-row input:focus { border-color: var(--accent); }
+    .add-interaction-row .btn-add-int {
+      padding: 7px 14px; background: var(--accent); color: #fff; border: none;
+      border-radius: 7px; font-size: 0.82rem; cursor: pointer; font-weight: 600;
+    }
   </style>
 </head>
 <body>
-  <div class="app">
-    <!-- Header -->
-    <header>
-      <div class="logo">
-        <div class="logo-icon">🎬</div>
-        <span class="logo-text">DemoReel</span>
-      </div>
-      <p class="tagline">Paste a URL → get a polished scroll-through video. Automated. No install required.</p>
-    </header>
+<div class="app">
 
-    <!-- Main form -->
-    <div class="card" id="form-card">
-      <!-- URL input -->
-      <div class="url-wrap">
-        <input
-          id="url-input"
-          class="url-input"
-          type="url"
-          placeholder="https://yourwebsite.com"
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </div>
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🎬</div>
+      <span class="logo-text">DemoReel</span>
+    </div>
+    <p class="tagline">Agent-ready demo video studio. Paste URL → polished scroll video.</p>
+    <div class="badge">✦ API-FIRST · AGENT-FRIENDLY</div>
+  </header>
 
-      <!-- Options -->
-      <div class="options-grid" style="margin-top: 24px;">
+  <!-- Wizard Steps Navigation -->
+  <div class="wizard-steps" id="wizard-steps">
+    <div class="step-item active" data-step="1" onclick="goToStep(1)">
+      <div class="step-num">1</div>
+      <div class="step-name">URL</div>
+    </div>
+    <div class="step-sep">›</div>
+    <div class="step-item" data-step="2" onclick="goToStep(2)">
+      <div class="step-num">2</div>
+      <div class="step-name">Style</div>
+    </div>
+    <div class="step-sep">›</div>
+    <div class="step-item" data-step="3" onclick="goToStep(3)">
+      <div class="step-num">3</div>
+      <div class="step-name">Script</div>
+    </div>
+    <div class="step-sep">›</div>
+    <div class="step-item" data-step="4" onclick="goToStep(4)">
+      <div class="step-num">4</div>
+      <div class="step-name">Music</div>
+    </div>
+    <div class="step-sep">›</div>
+    <div class="step-item" data-step="5" onclick="goToStep(5)">
+      <div class="step-num">5</div>
+      <div class="step-name">Export</div>
+    </div>
+  </div>
 
-        <!-- Speed -->
-        <div class="option-group">
-          <label>Scroll Speed</label>
-          <div class="pills" data-group="speed">
-            <button class="pill" data-value="slow">Slow</button>
-            <button class="pill active" data-value="medium">Medium</button>
-            <button class="pill" data-value="fast">Fast</button>
-            <button class="pill" data-value="blazing">⚡ Blazing</button>
-          </div>
+  <!-- Step 1: URL -->
+  <div class="step-panel active" id="step-1">
+    <div class="card">
+      <div class="card-title"><span>🔗</span> Enter URL to Record</div>
+      <input id="url-input" class="url-input" type="url" placeholder="https://yourwebsite.com" autocomplete="off" spellcheck="false" />
+
+      <div class="option-group">
+        <label>Quick Templates</label>
+        <div class="pills">
+          <button class="pill" onclick="applyTemplate('product-demo')">🚀 Product Demo</button>
+          <button class="pill" onclick="applyTemplate('landing-page')">🏠 Landing Page</button>
+          <button class="pill" onclick="applyTemplate('social-teaser')">📱 Social Teaser</button>
+          <button class="pill" onclick="applyTemplate('app-walkthrough')">🖥️ App Walkthrough</button>
         </div>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-next" onclick="nextStep()">Next: Style →</button>
+    </div>
+    <div class="error-msg" id="error-1"></div>
+  </div>
 
-        <!-- Viewport -->
+  <!-- Step 2: Style -->
+  <div class="step-panel" id="step-2">
+    <div class="card">
+      <div class="card-title"><span>🎨</span> Recording Style</div>
+      <div class="options-grid">
         <div class="option-group">
           <label>Viewport</label>
           <div class="pills" data-group="viewport">
@@ -189,8 +308,22 @@
             <button class="pill" data-value="widescreen">Wide</button>
           </div>
         </div>
-
-        <!-- Duration -->
+        <div class="option-group">
+          <label>Scroll Speed</label>
+          <div class="pills" data-group="speed">
+            <button class="pill" data-value="slow">Slow</button>
+            <button class="pill active" data-value="medium">Medium</button>
+            <button class="pill" data-value="fast">Fast</button>
+            <button class="pill" data-value="blazing">⚡ Blazing</button>
+          </div>
+        </div>
+        <div class="option-group">
+          <label>Page Theme</label>
+          <div class="pills" data-group="theme">
+            <button class="pill active" data-value="dark">🌙 Dark</button>
+            <button class="pill" data-value="light">☀️ Light</button>
+          </div>
+        </div>
         <div class="option-group">
           <label>Max Duration</label>
           <div class="pills" data-group="duration">
@@ -200,238 +333,709 @@
             <button class="pill" data-value="60">60s</button>
           </div>
         </div>
+      </div>
 
-        <!-- Theme -->
-        <div class="option-group">
-          <label>Page Theme</label>
-          <div class="pills" data-group="theme">
-            <button class="pill active" data-value="dark">🌙 Dark</button>
-            <button class="pill" data-value="light">☀️ Light</button>
+      <!-- Toggles -->
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-top:4px;">
+        <div class="toggle-row">
+          <label for="cursor-toggle" style="margin-right:10px;">✨ Glowing Cursor</label>
+          <label class="toggle"><input type="checkbox" id="cursor-toggle" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <label for="scrollbar-toggle" style="margin-right:10px;">🚫 Hide Scrollbar</label>
+          <label class="toggle"><input type="checkbox" id="scrollbar-toggle" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <label for="badge-toggle" style="margin-right:10px;">🏷️ Show Badge</label>
+          <label class="toggle"><input type="checkbox" id="badge-toggle" /><span class="slider"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactions -->
+    <div class="card">
+      <div class="card-title"><span>🖱️</span> Pre-Recording Interactions <small style="color:var(--muted);font-size:0.7rem;text-transform:none;letter-spacing:0"> (optional)</small></div>
+      <div class="interactions-list" id="interactions-list"></div>
+      <div class="add-interaction-row">
+        <select id="int-type">
+          <option value="click">Click</option>
+          <option value="hover">Hover</option>
+          <option value="type">Type</option>
+          <option value="scroll-to">Scroll To</option>
+          <option value="wait">Wait</option>
+        </select>
+        <input id="int-selector" placeholder="CSS selector or ms" style="flex:1;min-width:120px;" />
+        <input id="int-text" placeholder="text (for type)" style="flex:1;min-width:100px;display:none;" />
+        <button class="btn-add-int" onclick="addInteraction()">+ Add</button>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn-prev" onclick="prevStep()">← Back</button>
+      <button class="btn-next" onclick="nextStep()">Next: Script →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Script -->
+  <div class="step-panel" id="step-3">
+    <div class="card">
+      <div class="card-title"><span>📝</span> Script & Voiceover</div>
+
+      <div class="option-group">
+        <label>Mode</label>
+        <div class="pills" data-group="script-mode">
+          <button class="pill" data-value="none">No Voiceover</button>
+          <button class="pill active" data-value="manual">Write Script</button>
+          <button class="pill" data-value="auto">🤖 AI Generate</button>
+        </div>
+      </div>
+
+      <!-- Script controls (shown when manual or auto) -->
+      <div id="script-controls">
+        <div class="options-grid" id="ai-options" style="display:none;">
+          <div class="option-group">
+            <label>Purpose</label>
+            <div class="pills" data-group="script-purpose">
+              <button class="pill active" data-value="product-demo">Product Demo</button>
+              <button class="pill" data-value="tutorial">Tutorial</button>
+              <button class="pill" data-value="showcase">Showcase</button>
+              <button class="pill" data-value="teaser">Teaser</button>
+            </div>
+          </div>
+          <div class="option-group">
+            <label>Tone</label>
+            <div class="pills" data-group="script-tone">
+              <button class="pill active" data-value="professional">Professional</button>
+              <button class="pill" data-value="casual">Casual</button>
+              <button class="pill" data-value="exciting">Exciting</button>
+              <button class="pill" data-value="technical">Technical</button>
+            </div>
           </div>
         </div>
 
-      </div>
+        <textarea id="script-text" class="script-textarea" placeholder="Write your narration script here...
+(Approximately 150 words = 60 seconds)"></textarea>
 
-      <!-- Toggles row -->
-      <div style="display: flex; gap: 32px; margin-top: 20px; flex-wrap: wrap;">
-        <div class="toggle-row">
-          <label for="cursor-toggle" style="margin-right: 10px;">✨ Glowing Cursor</label>
-          <label class="toggle">
-            <input type="checkbox" id="cursor-toggle" checked />
-            <span class="slider"></span>
-          </label>
+        <div id="ai-generate-row" style="display:none;">
+          <button class="generate-btn" id="gen-script-btn" onclick="generateScript()">
+            <span>✨</span> Generate with AI
+          </button>
+          <span id="gen-status" style="font-size:0.78rem;color:var(--muted);margin-left:10px;"></span>
         </div>
-        <div class="toggle-row">
-          <label for="music-toggle" style="margin-right: 10px;">🎵 Background Music</label>
-          <label class="toggle">
-            <input type="checkbox" id="music-toggle" />
-            <span class="slider"></span>
-          </label>
+
+        <div id="voice-section" style="margin-top:18px;display:none;">
+          <div class="option-group">
+            <label>Voice</label>
+            <div class="voices-grid" id="voices-grid"></div>
+          </div>
         </div>
       </div>
-
-      <!-- Record button -->
-      <button class="record-btn" id="record-btn" onclick="startRecording()">
-        ● Record Video
-      </button>
-      <div class="error-msg" id="error-msg"></div>
     </div>
-
-    <!-- Progress -->
-    <div class="progress-card" id="progress-card">
-      <div class="progress-label">Recording in progress…</div>
-      <div class="progress-bar-wrap">
-        <div class="progress-bar" id="progress-bar" style="width: 30%"></div>
-      </div>
-      <div class="progress-msg" id="progress-msg">Starting browser...</div>
+    <div class="nav-row">
+      <button class="btn-prev" onclick="prevStep()">← Back</button>
+      <button class="btn-next" onclick="nextStep()">Next: Music →</button>
     </div>
-
-    <!-- Result -->
-    <div class="result-card" id="result-card">
-      <h3>✅ Your video is ready!</h3>
-      <video class="video-player" id="video-player" controls playsinline></video>
-      <div class="result-actions">
-        <a class="btn-download" id="download-btn" href="#" download>⬇ Download MP4</a>
-        <button class="btn-new" onclick="resetForm()">+ Record Another</button>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <footer>
-      <p>DemoReel by <a href="https://maragakisai.com" target="_blank">Maragakis AI</a> &mdash; Paste URL. Get video. Ship faster.</p>
-    </footer>
   </div>
 
-  <script>
-    // ── State ─────────────────────────────────────────────────────────────────
-    let currentJobId = null;
-    let pollTimer = null;
-    const progressMessages = [
-      'Launching browser...', 'Loading page...', 'Scrolling...', 'Recording...',
-      'Encoding video...', 'Running ffmpeg...', 'Almost done...',
-    ];
-    let progressIndex = 0;
-    let progressWidth = 15;
+  <!-- Step 4: Music -->
+  <div class="step-panel" id="step-4">
+    <div class="card">
+      <div class="card-title"><span>🎵</span> Background Music</div>
+      <div class="music-grid" id="music-grid"></div>
+      <div class="volume-row" id="volume-row" style="display:none;">
+        <label>Volume</label>
+        <input type="range" id="music-volume" min="0" max="1" step="0.05" value="0.3" oninput="document.getElementById('vol-label').textContent = Math.round(this.value*100)+'%'" />
+        <span id="vol-label" style="font-size:0.8rem;color:var(--muted);min-width:32px;">30%</span>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn-prev" onclick="prevStep()">← Back</button>
+      <button class="btn-next" onclick="nextStep()">Next: Export →</button>
+    </div>
+  </div>
 
-    // ── Pill selection ────────────────────────────────────────────────────────
-    document.querySelectorAll('.pills[data-group]').forEach(group => {
-      group.addEventListener('click', e => {
-        const btn = e.target.closest('.pill');
-        if (!btn) return;
-        group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-      });
+  <!-- Step 5: Export -->
+  <div class="step-panel" id="step-5">
+    <div class="card">
+      <div class="card-title"><span>📦</span> Export Settings</div>
+      <div class="options-grid">
+        <div class="option-group">
+          <label>Quality</label>
+          <div class="pills" data-group="quality">
+            <button class="pill" data-value="low">Low</button>
+            <button class="pill" data-value="medium">Medium</button>
+            <button class="pill active" data-value="high">High</button>
+            <button class="pill" data-value="ultra">Ultra</button>
+          </div>
+        </div>
+        <div class="option-group">
+          <label>Format</label>
+          <div class="pills" data-group="format">
+            <button class="pill active" data-value="mp4">MP4</button>
+            <button class="pill" data-value="webm">WebM</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="card">
+      <div class="card-title"><span>📋</span> Recording Summary</div>
+      <div id="summary" style="font-size:0.85rem;color:var(--muted);line-height:1.7;"></div>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn-prev" onclick="prevStep()">← Back</button>
+      <button class="btn-record" id="record-btn" onclick="startRecording()">🔴 Start Recording</button>
+    </div>
+    <div class="error-msg" id="error-5"></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-section card" id="progress-section">
+    <div class="progress-header">
+      <div class="progress-label">Recording in progress…</div>
+      <div class="progress-pct" id="progress-pct">0%</div>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar" style="width:5%"></div>
+    </div>
+    <div class="progress-msg" id="progress-msg">Initializing...</div>
+  </div>
+
+  <!-- Result -->
+  <div class="result-section card" id="result-section">
+    <div class="result-header">
+      <span style="font-size:1.4rem;">✅</span>
+      <h3>Your video is ready!</h3>
+    </div>
+    <video id="video-player" controls playsinline></video>
+    <div class="result-actions">
+      <a class="btn-download" id="download-btn" href="#" download>⬇ Download MP4</a>
+      <button class="btn-new" onclick="resetAll()">+ Record Another</button>
+    </div>
+  </div>
+
+  <!-- API Hint -->
+  <div class="api-hint">
+    <h4>🤖 Agent / API Access</h4>
+    <div class="api-code" id="api-code-hint">POST /api/record  →  { "url": "...", "viewport": "desktop", "speed": "fast" }</div>
+    <div style="margin-top:8px;font-size:0.75rem;color:var(--muted);">
+      Full docs: <a href="/api/docs" style="color:#93c5fd;" target="_blank">/api/docs</a> &nbsp;·&nbsp;
+      Presets: <a href="/api/presets" style="color:#93c5fd;" target="_blank">/api/presets</a>
+    </div>
+  </div>
+
+  <footer>
+    <p>DemoReel v2 by <a href="https://maragakisai.com" target="_blank">Maragakis AI</a> — Paste URL. Get video. Ship faster.</p>
+  </footer>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let currentStep = 1;
+let totalSteps = 5;
+let currentJobId = null;
+let pollTimer = null;
+let interactions = [];
+let presetsData = {};
+let selectedVoice = 'alloy';
+let selectedMusic = 'none';
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  // Load presets
+  try {
+    const res = await fetch('/api/presets');
+    presetsData = await res.json();
+    renderMusicGrid();
+    renderVoicesGrid();
+  } catch (e) {
+    console.warn('Failed to load presets', e);
+  }
+
+  // Pill selection
+  document.querySelectorAll('.pills[data-group]').forEach(group => {
+    group.addEventListener('click', e => {
+      const btn = e.target.closest('.pill');
+      if (!btn || !btn.dataset.value) return;
+      group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      if (group.dataset.group === 'script-mode') handleScriptModeChange(btn.dataset.value);
+      updateApiHint();
     });
+  });
 
-    function getSelected(group) {
-      const el = document.querySelector(`.pills[data-group="${group}"] .pill.active`);
-      return el ? el.dataset.value : null;
+  // Interaction type selector
+  document.getElementById('int-type').addEventListener('change', () => {
+    const type = document.getElementById('int-type').value;
+    const textInput = document.getElementById('int-text');
+    const selInput = document.getElementById('int-selector');
+    if (type === 'wait') {
+      selInput.placeholder = 'milliseconds (e.g. 1000)';
+      textInput.style.display = 'none';
+    } else if (type === 'type') {
+      selInput.placeholder = 'CSS selector';
+      textInput.style.display = 'block';
+    } else {
+      selInput.placeholder = 'CSS selector';
+      textInput.style.display = 'none';
     }
+  });
 
-    // ── Recording ─────────────────────────────────────────────────────────────
-    async function startRecording() {
-      const url = document.getElementById('url-input').value.trim();
-      if (!url) {
-        showError('Please enter a URL first.');
-        return;
-      }
+  // URL input events
+  document.getElementById('url-input').addEventListener('blur', e => {
+    let val = e.target.value.trim();
+    if (val && !val.startsWith('http')) e.target.value = 'https://' + val;
+  });
 
-      clearError();
+  document.getElementById('url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') nextStep();
+  });
 
-      const payload = {
+  updateApiHint();
+});
+
+// ─── Presets ──────────────────────────────────────────────────────────────────
+function renderMusicGrid() {
+  const grid = document.getElementById('music-grid');
+  if (!grid) return;
+
+  const tracks = presetsData.music || [];
+  const moodEmojis = { energetic: '⚡', professional: '💼', dramatic: '🎭', relaxed: '🌙', suspense: '😮', fun: '🎉' };
+
+  grid.innerHTML = `
+    <div class="music-card none-card active" data-id="none" onclick="selectMusic('none', this)">
+      <div class="music-name">🚫 No Music</div>
+      <div class="music-mood">Silent background</div>
+    </div>
+    ${tracks.map(t => `
+      <div class="music-card" data-id="${t.id}" onclick="selectMusic('${t.id}', this)">
+        <span class="music-play" onclick="previewMusic(event, '${t.id}')" title="Preview">▶</span>
+        <div class="music-name">${moodEmojis[t.mood] || '🎵'} ${t.name}</div>
+        <div class="music-mood">${t.mood} · ${t.duration}s</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+function renderVoicesGrid() {
+  const grid = document.getElementById('voices-grid');
+  if (!grid) return;
+  const voices = presetsData.voices || [];
+  grid.innerHTML = voices.map(v => `
+    <div class="voice-card ${v.id === selectedVoice ? 'active' : ''}" data-id="${v.id}" onclick="selectVoice('${v.id}', this)">
+      <div class="voice-name">${v.name}</div>
+      <div class="voice-style">${v.style}</div>
+    </div>
+  `).join('');
+}
+
+function selectMusic(id, el) {
+  selectedMusic = id;
+  document.querySelectorAll('.music-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('volume-row').style.display = id !== 'none' ? 'flex' : 'none';
+  updateApiHint();
+}
+
+function selectVoice(id, el) {
+  selectedVoice = id;
+  document.querySelectorAll('.voice-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  updateApiHint();
+}
+
+let previewAudio = null;
+function previewMusic(e, id) {
+  e.stopPropagation();
+  if (previewAudio) { previewAudio.pause(); previewAudio = null; }
+  const audio = new Audio(`/music/${id}.mp3`);
+  audio.volume = 0.5;
+  audio.play().catch(() => {});
+  previewAudio = audio;
+  setTimeout(() => { if (previewAudio) { previewAudio.pause(); previewAudio = null; } }, 8000);
+}
+
+// ─── Script Mode ──────────────────────────────────────────────────────────────
+function handleScriptModeChange(mode) {
+  const aiOptions = document.getElementById('ai-options');
+  const aiGenRow = document.getElementById('ai-generate-row');
+  const voiceSection = document.getElementById('voice-section');
+  const scriptControls = document.getElementById('script-controls');
+
+  if (mode === 'none') {
+    scriptControls.style.display = 'none';
+  } else {
+    scriptControls.style.display = 'block';
+    aiOptions.style.display = mode === 'auto' ? 'grid' : 'none';
+    aiGenRow.style.display = mode === 'auto' ? 'block' : 'none';
+    voiceSection.style.display = 'block';
+  }
+}
+
+async function generateScript() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) { alert('Please enter a URL in Step 1 first'); return; }
+
+  const btn = document.getElementById('gen-script-btn');
+  const status = document.getElementById('gen-status');
+  btn.disabled = true;
+  status.textContent = '⏳ Generating...';
+
+  try {
+    const res = await fetch('/api/script/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         url,
-        speed:    getSelected('speed')    || 'medium',
-        viewport: getSelected('viewport') || 'desktop',
-        theme:    getSelected('theme')    || 'dark',
+        purpose: getSelected('script-purpose') || 'product-demo',
         duration: parseInt(getSelected('duration') || '30'),
-        cursor:   document.getElementById('cursor-toggle').checked,
-        music:    document.getElementById('music-toggle').checked,
-      };
+        tone: getSelected('script-tone') || 'professional',
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    document.getElementById('script-text').value = data.script || '';
+    status.textContent = '✅ Generated!';
+    setTimeout(() => { status.textContent = ''; }, 3000);
+  } catch (err) {
+    status.textContent = '❌ ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
 
-      // UI state
-      document.getElementById('record-btn').disabled = true;
-      document.getElementById('record-btn').classList.add('loading');
-      document.getElementById('record-btn').textContent = '⏳ Recording...';
-      showProgress();
+// ─── Interactions ─────────────────────────────────────────────────────────────
+function addInteraction() {
+  const type = document.getElementById('int-type').value;
+  const selector = document.getElementById('int-selector').value.trim();
+  const text = document.getElementById('int-text').value.trim();
 
-      try {
-        const res = await fetch('/api/record', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
+  if (!selector) { alert('Enter a selector or value'); return; }
 
-        if (!res.ok || data.error) {
-          throw new Error(data.error || 'Failed to start recording');
-        }
+  const item = { type };
+  if (type === 'wait') item.ms = parseInt(selector) || 1000;
+  else if (type === 'type') { item.selector = selector; item.text = text; }
+  else item.selector = selector;
 
-        currentJobId = data.id;
-        pollJob();
-      } catch (err) {
-        showError(err.message);
-        resetRecordBtn();
+  interactions.push(item);
+  renderInteractions();
+  document.getElementById('int-selector').value = '';
+  document.getElementById('int-text').value = '';
+}
+
+function removeInteraction(idx) {
+  interactions.splice(idx, 1);
+  renderInteractions();
+}
+
+function renderInteractions() {
+  const list = document.getElementById('interactions-list');
+  list.innerHTML = interactions.map((item, i) => `
+    <div class="interaction-item">
+      <span class="type-badge">${item.type}</span>
+      <span class="details">${item.selector || item.ms + 'ms'}${item.text ? ' → "' + item.text + '"' : ''}</span>
+      <span class="remove-btn" onclick="removeInteraction(${i})">×</span>
+    </div>
+  `).join('');
+}
+
+// ─── Templates ────────────────────────────────────────────────────────────────
+async function applyTemplate(id) {
+  try {
+    const res = await fetch('/api/presets');
+    const data = await res.json();
+    const tpl = (data.templates || []).find(t => t.id === id);
+    if (!tpl) return;
+    const c = tpl.config;
+
+    // Apply viewport
+    if (c.viewport) setPillActive('viewport', c.viewport);
+    if (c.speed) setPillActive('speed', c.speed);
+    if (c.theme) setPillActive('theme', c.theme);
+    if (c.duration) setPillActive('duration', String(c.duration));
+
+    // Cursor
+    if (typeof c.cursor === 'boolean') document.getElementById('cursor-toggle').checked = c.cursor;
+
+    // Music
+    if (c.music) {
+      const musicCard = document.querySelector(`.music-card[data-id="${c.music.track}"]`);
+      if (musicCard) selectMusic(c.music.track, musicCard);
+      if (c.music.volume !== undefined) {
+        document.getElementById('music-volume').value = c.music.volume;
+        document.getElementById('vol-label').textContent = Math.round(c.music.volume * 100) + '%';
+      }
+    }
+
+    // Script
+    if (c.script) {
+      const mode = c.script.mode || 'none';
+      setPillActive('script-mode', mode);
+      handleScriptModeChange(mode);
+      if (c.script.purpose) setPillActive('script-purpose', c.script.purpose);
+      if (c.script.tone) setPillActive('script-tone', c.script.tone);
+    }
+
+    // Export
+    if (c.export) {
+      if (c.export.quality) setPillActive('quality', c.export.quality);
+      if (c.export.format) setPillActive('format', c.export.format);
+    }
+
+    // Move to step 2
+    goToStep(2);
+  } catch (e) {
+    console.warn('Template apply failed', e);
+  }
+}
+
+function setPillActive(group, value) {
+  const container = document.querySelector(`.pills[data-group="${group}"]`);
+  if (!container) return;
+  container.querySelectorAll('.pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.value === value);
+  });
+}
+
+// ─── Step Navigation ──────────────────────────────────────────────────────────
+function goToStep(step) {
+  // Validate before jumping forward
+  if (step > currentStep) {
+    for (let s = currentStep; s < step; s++) {
+      if (!validateStep(s)) return;
+    }
+  }
+
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`step-${step}`).classList.add('active');
+
+  document.querySelectorAll('.step-item').forEach(item => {
+    const s = parseInt(item.dataset.step);
+    item.classList.remove('active', 'done');
+    if (s < step) item.classList.add('done');
+    else if (s === step) item.classList.add('active');
+  });
+
+  currentStep = step;
+  if (step === 5) renderSummary();
+}
+
+function nextStep() {
+  if (!validateStep(currentStep)) return;
+  if (currentStep < totalSteps) goToStep(currentStep + 1);
+}
+
+function prevStep() {
+  if (currentStep > 1) goToStep(currentStep - 1);
+}
+
+function validateStep(step) {
+  if (step === 1) {
+    const url = document.getElementById('url-input').value.trim();
+    if (!url) {
+      showError('error-1', 'Please enter a URL.');
+      document.getElementById('url-input').focus();
+      return false;
+    }
+    try { new URL(url.startsWith('http') ? url : 'https://' + url); } catch {
+      showError('error-1', 'Please enter a valid URL.');
+      return false;
+    }
+    clearError('error-1');
+    return true;
+  }
+  return true;
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = '⚠ ' + msg; el.classList.add('show'); }
+}
+function clearError(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('show');
+}
+
+// ─── Summary ──────────────────────────────────────────────────────────────────
+function renderSummary() {
+  const url = document.getElementById('url-input').value.trim();
+  const viewport = getSelected('viewport') || 'desktop';
+  const speed = getSelected('speed') || 'medium';
+  const duration = getSelected('duration') || '30';
+  const theme = getSelected('theme') || 'dark';
+  const quality = getSelected('quality') || 'high';
+  const format = getSelected('format') || 'mp4';
+  const scriptMode = getSelected('script-mode') || 'none';
+  const cursor = document.getElementById('cursor-toggle').checked;
+  const music = selectedMusic !== 'none' ? selectedMusic : 'none';
+
+  document.getElementById('summary').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;">
+      <div>🔗 <b>URL:</b> ${url.slice(0, 50)}${url.length > 50 ? '…' : ''}</div>
+      <div>📐 <b>Viewport:</b> ${viewport}</div>
+      <div>⚡ <b>Speed:</b> ${speed}</div>
+      <div>⏱ <b>Duration:</b> ${duration}s max</div>
+      <div>🎨 <b>Theme:</b> ${theme}</div>
+      <div>✨ <b>Cursor:</b> ${cursor ? 'Yes' : 'No'}</div>
+      <div>🎵 <b>Music:</b> ${music}</div>
+      <div>📝 <b>Voiceover:</b> ${scriptMode}</div>
+      <div>📦 <b>Quality:</b> ${quality}</div>
+      <div>🎬 <b>Format:</b> ${format.toUpperCase()}</div>
+      ${interactions.length > 0 ? `<div colspan="2">🖱 <b>Interactions:</b> ${interactions.length} action(s)</div>` : ''}
+    </div>
+  `;
+
+  updateApiHint();
+}
+
+// ─── API Hint ──────────────────────────────────────────────────────────────────
+function updateApiHint() {
+  const url = document.getElementById('url-input')?.value?.trim() || 'https://example.com';
+  const viewport = getSelected('viewport') || 'desktop';
+  const speed = getSelected('speed') || 'medium';
+  const music = selectedMusic !== 'none' ? `"${selectedMusic}"` : '"none"';
+  const hint = `POST /api/record
+{ "url": "${url}", "viewport": "${viewport}", "speed": "${speed}", "music": { "track": ${music} } }`;
+  const el = document.getElementById('api-code-hint');
+  if (el) el.textContent = hint;
+}
+
+// ─── Recording ────────────────────────────────────────────────────────────────
+async function startRecording() {
+  const url = document.getElementById('url-input').value.trim();
+  clearError('error-5');
+
+  // Build payload
+  const scriptMode = getSelected('script-mode') || 'none';
+  const scriptText = document.getElementById('script-text').value.trim();
+
+  const payload = {
+    url: url.startsWith('http') ? url : 'https://' + url,
+    viewport: getSelected('viewport') || 'desktop',
+    theme: getSelected('theme') || 'dark',
+    speed: getSelected('speed') || 'medium',
+    duration: parseInt(getSelected('duration') || '30'),
+    cursor: document.getElementById('cursor-toggle').checked,
+    hideScrollbar: document.getElementById('scrollbar-toggle').checked,
+    interactions: interactions,
+    branding: {
+      showBadge: document.getElementById('badge-toggle').checked,
+    },
+    music: selectedMusic !== 'none' ? {
+      track: selectedMusic,
+      volume: parseFloat(document.getElementById('music-volume').value) || 0.3,
+    } : { track: 'none' },
+    export: {
+      quality: getSelected('quality') || 'high',
+      format: getSelected('format') || 'mp4',
+    },
+  };
+
+  if (scriptMode !== 'none' && scriptText) {
+    payload.script = { mode: scriptMode, voice: selectedVoice };
+  }
+
+  // UI
+  document.getElementById('record-btn').disabled = true;
+  document.getElementById('record-btn').classList.add('loading');
+  document.getElementById('record-btn').textContent = '⏳ Recording...';
+
+  // Hide step panel, show progress
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.step-item').forEach(p => p.classList.add('done'));
+  showProgress();
+
+  try {
+    const res = await fetch('/api/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Failed to start recording');
+    currentJobId = data.id;
+    pollJob();
+  } catch (err) {
+    showError('error-5', err.message);
+    resetRecordBtn();
+    hideProgress();
+    goToStep(5);
+  }
+}
+
+function pollJob() {
+  if (!currentJobId) return;
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/status/${currentJobId}`);
+      const data = await res.json();
+      if (data.progressMessage) document.getElementById('progress-msg').textContent = data.progressMessage;
+      if (data.progress !== undefined) {
+        const pct = Math.max(5, data.progress);
+        document.getElementById('progress-bar').style.width = pct + '%';
+        document.getElementById('progress-pct').textContent = pct + '%';
+      }
+      if (data.status === 'completed') {
+        clearInterval(pollTimer);
+        document.getElementById('progress-bar').style.width = '100%';
+        document.getElementById('progress-pct').textContent = '100%';
+        setTimeout(() => showResult(data.downloadUrl), 400);
+      } else if (data.status === 'failed') {
+        clearInterval(pollTimer);
         hideProgress();
+        resetRecordBtn();
+        showError('error-5', data.error || 'Recording failed');
+        goToStep(5);
       }
-    }
+    } catch {}
+  }, 2000);
+}
 
-    function pollJob() {
-      if (!currentJobId) return;
+function showProgress() {
+  document.getElementById('progress-section').classList.add('show');
+}
+function hideProgress() {
+  document.getElementById('progress-section').classList.remove('show');
+}
 
-      pollTimer = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/status/${currentJobId}`);
-          const data = await res.json();
+function showResult(downloadUrl) {
+  hideProgress();
+  const section = document.getElementById('result-section');
+  section.classList.add('show');
+  const video = document.getElementById('video-player');
+  video.src = downloadUrl;
+  video.load();
+  video.play().catch(() => {});
+  const dlBtn = document.getElementById('download-btn');
+  dlBtn.href = downloadUrl;
+  resetRecordBtn();
+}
 
-          if (data.progress) {
-            document.getElementById('progress-msg').textContent = data.progress;
-          }
+function resetRecordBtn() {
+  const btn = document.getElementById('record-btn');
+  btn.disabled = false;
+  btn.classList.remove('loading');
+  btn.textContent = '🔴 Start Recording';
+}
 
-          // Animate progress bar
-          progressWidth = Math.min(progressWidth + 4, 90);
-          document.getElementById('progress-bar').style.width = progressWidth + '%';
+function resetAll() {
+  clearInterval(pollTimer);
+  currentJobId = null;
+  document.getElementById('result-section').classList.remove('show');
+  document.getElementById('video-player').src = '';
+  hideProgress();
+  interactions = [];
+  renderInteractions();
+  goToStep(1);
+}
 
-          if (data.status === 'done') {
-            clearInterval(pollTimer);
-            document.getElementById('progress-bar').style.width = '100%';
-            setTimeout(() => showResult(data.downloadUrl), 300);
-          } else if (data.status === 'error') {
-            clearInterval(pollTimer);
-            hideProgress();
-            resetRecordBtn();
-            showError(data.error || 'Recording failed. Check URL and try again.');
-          }
-        } catch (e) {
-          // ignore network blips
-        }
-      }, 1500);
-    }
-
-    function showResult(downloadUrl) {
-      hideProgress();
-      document.getElementById('result-card').classList.add('show');
-
-      const videoEl = document.getElementById('video-player');
-      videoEl.src = downloadUrl;
-      videoEl.load();
-      videoEl.play().catch(() => {});
-
-      const dlBtn = document.getElementById('download-btn');
-      dlBtn.href = downloadUrl;
-    }
-
-    function resetForm() {
-      clearInterval(pollTimer);
-      currentJobId = null;
-      progressWidth = 15;
-      document.getElementById('result-card').classList.remove('show');
-      document.getElementById('video-player').src = '';
-      resetRecordBtn();
-      clearError();
-    }
-
-    function resetRecordBtn() {
-      const btn = document.getElementById('record-btn');
-      btn.disabled = false;
-      btn.classList.remove('loading');
-      btn.textContent = '● Record Video';
-    }
-
-    // ── Progress ──────────────────────────────────────────────────────────────
-    function showProgress() {
-      const card = document.getElementById('progress-card');
-      card.classList.add('show');
-      progressWidth = 15;
-      document.getElementById('progress-bar').style.width = progressWidth + '%';
-    }
-
-    function hideProgress() {
-      document.getElementById('progress-card').classList.remove('show');
-    }
-
-    // ── Error ─────────────────────────────────────────────────────────────────
-    function showError(msg) {
-      const el = document.getElementById('error-msg');
-      el.textContent = '⚠ ' + msg;
-      el.classList.add('show');
-    }
-
-    function clearError() {
-      document.getElementById('error-msg').classList.remove('show');
-    }
-
-    // ── URL input: auto-prefix ─────────────────────────────────────────────────
-    document.getElementById('url-input').addEventListener('blur', e => {
-      let val = e.target.value.trim();
-      if (val && !val.startsWith('http')) {
-        e.target.value = 'https://' + val;
-      }
-    });
-
-    // Enter key on URL input
-    document.getElementById('url-input').addEventListener('keydown', e => {
-      if (e.key === 'Enter') startRecording();
-    });
-  </script>
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function getSelected(group) {
+  const el = document.querySelector(`.pills[data-group="${group}"] .pill.active`);
+  return el ? el.dataset.value : null;
+}
+</script>
 </body>
 </html>
