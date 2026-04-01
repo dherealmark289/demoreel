@@ -22,12 +22,28 @@ const { generateXPost } = require('./xPostGen');
 const upload = multer({
   storage: multer.diskStorage({
     destination: '/tmp',
-    filename: (req, file, cb) => cb(null, `upload-${uuidv4()}.${file.mimetype.includes('mp4') ? 'mp4' : 'webm'}`),
+    filename: (req, file, cb) => {
+      const ext = file.mimetype.includes('mp4') ? 'mp4' : 'webm';
+      cb(null, `upload-${uuidv4()}.${ext}`);
+    },
   }),
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB max
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('video/')) cb(null, true);
     else cb(new Error('Only video files are accepted'));
+  },
+});
+
+// Multer for multi-clip reel (any field starting with clip_)
+const reelUpload = multer({
+  storage: multer.diskStorage({
+    destination: '/tmp',
+    filename: (req, file, cb) => cb(null, `reel-clip-${uuidv4()}.webm`),
+  }),
+  limits: { fileSize: 2000 * 1024 * 1024 }, // 2GB total
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/') || file.fieldname.startsWith('clip_')) cb(null, true);
+    else cb(null, true); // accept all from reel
   },
 });
 
@@ -1017,6 +1033,342 @@ async function runAssemblyPipeline({ id, job, recordingUrl, description, title, 
     job.error = err.message;
     job.progressPercent = 0;
     storage.updateJob(id, { status: 'failed', error: err.message }).catch(() => {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/upload-reel — Multi-clip reel assembly
+// Body (multipart): clip_0, clip_1, ... + description, sfx, cursor, voice, tone
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/upload-reel', reelUpload.any(), async (req, res) => {
+  try {
+    const clips = (req.files || []).filter(f => f.fieldname.startsWith('clip_'));
+    if (clips.length < 2) {
+      return res.status(400).json({ error: 'At least 2 clips are required for a reel' });
+    }
+
+    const {
+      description = '',
+      sfx = 'whoosh',
+      cursor = 'smooth',
+      autoZoom = 'true',
+      voice = 'alloy',
+      tone = 'exciting',
+    } = req.body;
+
+    if (!description) {
+      return res.status(400).json({ error: 'description is required' });
+    }
+
+    const id = uuidv4();
+    const job = {
+      status: 'processing',
+      progress: 'Processing reel clips...',
+      progressPercent: 5,
+      outputPath: null,
+      videoUrl: null,
+      thumbnailUrl: null,
+      error: null,
+      createdAt: Date.now(),
+      estimatedTime: clips.length * 20 + 60,
+      metadata: { duration: null, fileSize: null, resolution: null, scenes: clips.length, type: 'reel' },
+      script: null,
+      voiceoverUrl: null,
+      shotstackRenderId: null,
+      assembledVideoUrl: null,
+      xpost: null,
+    };
+
+    jobs.set(id, job);
+    storage.createJob(id, `Reel: ${description.slice(0, 80)}`, { description, sfx, cursor, autoZoom, voice, tone }, getClientIp(req), req.headers['user-agent']).catch(() => {});
+
+    // Upload clips to R2 and run reel pipeline
+    runReelPipeline({ id, job, clips, description, sfx, cursor, autoZoom: autoZoom === 'true', voice, tone });
+
+    res.json({ id, status: 'processing', message: `Reel pipeline started with ${clips.length} clips.` });
+
+  } catch (err) {
+    console.error('[upload-reel] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Generate SFX audio via ElevenLabs Sound Generation API
+ */
+async function generateSFX(prompt, durationSeconds = 2) {
+  const https = require('https');
+  const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+  if (!ELEVENLABS_API_KEY) return null;
+
+  const sfxPrompts = {
+    whoosh: 'fast whoosh transition sound effect, cinematic',
+    cinematic: 'deep cinematic impact boom, dramatic',
+    tech: 'UI click notification sound, clean digital beep',
+    none: null,
+  };
+
+  const sfxPromptText = typeof prompt === 'string' && sfxPrompts[prompt] !== undefined
+    ? sfxPrompts[prompt]
+    : prompt;
+
+  if (!sfxPromptText) return null;
+
+  const body = JSON.stringify({
+    text: sfxPromptText,
+    duration_seconds: Math.min(durationSeconds, 5),
+    prompt_influence: 0.3,
+  });
+
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'api.elevenlabs.io',
+      path: '/v1/sound-generation',
+      method: 'POST',
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'Accept': 'audio/mpeg',
+      },
+    };
+
+    const sfxPath = `/tmp/sfx-${uuidv4()}.mp3`;
+    const writeStream = require('fs').createWriteStream(sfxPath);
+
+    const req = https.request(options, (sfxRes) => {
+      if (sfxRes.statusCode !== 200) {
+        sfxRes.resume();
+        console.warn(`[sfx] ElevenLabs SFX API returned ${sfxRes.statusCode}`);
+        resolve(null);
+        return;
+      }
+      sfxRes.pipe(writeStream);
+      writeStream.on('finish', () => resolve(sfxPath));
+    });
+
+    req.on('error', (e) => { console.warn('[sfx] Error:', e.message); resolve(null); });
+    req.write(body);
+    req.end();
+
+    setTimeout(() => { try { req.destroy(); } catch {} resolve(null); }, 15000);
+  });
+}
+
+/**
+ * Core reel assembly pipeline
+ * Uploads clips → generates VO → adds SFX → Shotstack assembly
+ */
+async function runReelPipeline({ id, job, clips, description, sfx, cursor, autoZoom, voice, tone }) {
+  const { execSync } = require('child_process');
+  const https = require('https');
+
+  try {
+    job.progress = 'Uploading clips to storage...';
+    job.progressPercent = 10;
+
+    // Upload all clips to R2
+    const clipUrls = [];
+    for (let i = 0; i < clips.length; i++) {
+      const clip = clips[i];
+      try {
+        const buf = fs.readFileSync(clip.path);
+        const key = `reels/${id}/clip_${i}.webm`;
+        const url = await storage.uploadToR2(key, buf, 'video/webm');
+        clipUrls.push(url || `file://${clip.path}`);
+      } catch {
+        clipUrls.push(`file://${clip.path}`);
+      }
+      job.progressPercent = 10 + Math.round((i / clips.length) * 15);
+    }
+
+    job.progress = 'Generating reel script with Claude...';
+    job.progressPercent = 25;
+
+    // Generate script for the reel (shorter, punchier for teaser)
+    const reelDuration = Math.min(clips.length * 10, 45);
+    const { script, sections } = await generateScript({
+      url: null,
+      description: `REEL TEASER: ${description}. This is a ${clips.length}-clip product teaser, keep it punchy and exciting.`,
+      purpose: 'teaser',
+      duration: reelDuration,
+      tone,
+    });
+
+    job.script = script;
+    job.progressPercent = 40;
+    job.progress = 'Generating voiceover...';
+
+    // Generate voiceover
+    let voiceoverUrl = null;
+    try {
+      const vo = await generateVoiceover({ script, voice, provider: 'elevenlabs' });
+      voiceoverUrl = vo.audioUrl;
+      job.voiceoverUrl = voiceoverUrl;
+
+      if (vo.audioPath) {
+        try {
+          const buf = fs.readFileSync(vo.audioPath);
+          const r2Url = await storage.uploadToR2(`reels/${id}/voiceover.mp3`, buf, 'audio/mpeg');
+          if (r2Url) { voiceoverUrl = r2Url; job.voiceoverUrl = r2Url; }
+        } catch {}
+      }
+    } catch (voErr) {
+      console.warn('[reel-pipeline] VO failed:', voErr.message);
+    }
+
+    job.progress = 'Generating SFX transitions...';
+    job.progressPercent = 50;
+
+    // Generate SFX for transitions between clips
+    let sfxUrl = null;
+    if (sfx !== 'none') {
+      const sfxPath = await generateSFX(sfx, 1.5);
+      if (sfxPath) {
+        try {
+          const buf = fs.readFileSync(sfxPath);
+          const r2Url = await storage.uploadToR2(`reels/${id}/sfx.mp3`, buf, 'audio/mpeg');
+          sfxUrl = r2Url;
+          try { fs.unlinkSync(sfxPath); } catch {}
+        } catch {}
+      }
+    }
+
+    job.progress = 'Assembling reel with Shotstack...';
+    job.progressPercent = 60;
+
+    // Build Shotstack reel timeline
+    const clipDuration = reelDuration / clips.length;
+    const tracks = [];
+
+    // Video tracks: one clip per segment
+    const videoClips = clipUrls.map((url, i) => ({
+      asset: { type: 'video', src: url, volume: 0 },
+      start: i * clipDuration,
+      length: clipDuration,
+      transition: i < clipUrls.length - 1 ? { in: 'fade', out: 'fade' } : { in: 'fade' },
+      effect: autoZoom ? 'zoomIn' : undefined,
+    }));
+    tracks.push({ clips: videoClips });
+
+    // SFX transitions between clips
+    if (sfxUrl && clips.length > 1) {
+      const sfxClips = [];
+      for (let i = 1; i < clips.length; i++) {
+        sfxClips.push({
+          asset: { type: 'audio', src: sfxUrl, volume: 0.8 },
+          start: i * clipDuration - 0.3,
+          length: 1.5,
+        });
+      }
+      tracks.push({ clips: sfxClips });
+    }
+
+    // Voiceover
+    if (voiceoverUrl) {
+      const voUrl = voiceoverUrl.startsWith('/api/')
+        ? `https://demoreel-production.up.railway.app${voiceoverUrl}`
+        : voiceoverUrl;
+      tracks.push({ clips: [{ asset: { type: 'audio', src: voUrl, volume: 1 }, start: 0, length: reelDuration }] });
+    }
+
+    // Caption clips per section
+    if (sections?.length) {
+      const captionClips = sections.map((sec, i) => {
+        const nextSec = sections[i + 1];
+        const start = (sec.scrollPercent / 100) * reelDuration;
+        const end = nextSec ? (nextSec.scrollPercent / 100) * reelDuration : reelDuration;
+        return {
+          asset: { type: 'title', text: sec.text, style: 'subtitle', color: '#ffffff', size: 'small', position: 'bottomCenter' },
+          start,
+          length: Math.min(end - start, 5),
+          transition: { in: 'fade', out: 'fade' },
+        };
+      });
+      tracks.push({ clips: captionClips });
+    }
+
+    // Title intro card
+    tracks.push({ clips: [{
+      asset: { type: 'title', text: description.slice(0, 60), style: 'future', color: '#ffffff', size: 'medium', background: '#000000', position: 'center' },
+      start: 0, length: 2,
+      transition: { in: 'fade', out: 'fade' },
+    }]});
+
+    const { assembleDemo, pollShotstack } = require('./shotstackAssembler');
+
+    // Use direct Shotstack render for reel (custom timeline)
+    const https2 = require('https');
+    const shotstackPayload = {
+      timeline: { background: '#000000', tracks },
+      output: { format: 'mp4', resolution: 'hd', aspectRatio: '16:9', fps: 30 },
+    };
+
+    const renderRes = await new Promise((resolve, reject) => {
+      const body = JSON.stringify(shotstackPayload);
+      const opts = {
+        hostname: 'v1.shotstack.io',
+        path: '/edit/v1/render',
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.SHOTSTACK_API_KEY || 'Pmh5dSMlQQAW2Q0jeGnJXUM9oQW5Tz7gCAqDOIkm',
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      };
+      const req = https2.request(opts, (r) => {
+        let data = '';
+        r.on('data', d => { data += d; });
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(data) }));
+      });
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+
+    if (renderRes.status !== 201 && renderRes.status !== 200) {
+      throw new Error(`Shotstack reel render failed (${renderRes.status}): ${JSON.stringify(renderRes.body)}`);
+    }
+
+    const renderId = renderRes.body?.response?.id;
+    if (!renderId) throw new Error('No render ID from Shotstack');
+
+    job.shotstackRenderId = renderId;
+    job.progress = 'Rendering reel (Shotstack)...';
+    job.progressPercent = 70;
+
+    // Poll Shotstack
+    let done = false;
+    let finalUrl = null;
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const poll = await pollShotstack(renderId);
+      if (poll.status === 'done') { finalUrl = poll.url; done = true; break; }
+      if (poll.status === 'failed') throw new Error(`Shotstack render failed: ${poll.error}`);
+      job.progressPercent = 70 + Math.round((i / 60) * 25);
+    }
+
+    if (!done) throw new Error('Reel render timed out');
+
+    job.status = 'completed';
+    job.progress = 'Reel ready!';
+    job.progressPercent = 100;
+    job.assembledVideoUrl = finalUrl;
+    job.videoUrl = finalUrl;
+
+    storage.updateJob(id, { status: 'completed', video_url: finalUrl, script, voiceover_url: voiceoverUrl }).catch(() => {});
+    console.log(`[reel-pipeline] Job ${id} done. URL: ${finalUrl}`);
+
+    // Cleanup temp clip files
+    clips.forEach(c => { try { fs.unlinkSync(c.path); } catch {} });
+
+  } catch (err) {
+    console.error(`[reel-pipeline] Job ${id} failed:`, err.message);
+    job.status = 'failed';
+    job.error = err.message;
+    job.progressPercent = 0;
+    storage.updateJob(id, { status: 'failed', error: err.message }).catch(() => {});
+    clips.forEach(c => { try { fs.unlinkSync(c.path); } catch {} });
   }
 }
 

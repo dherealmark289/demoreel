@@ -12,7 +12,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "DemoReel Recorder"
+    "default_title": "DemoReel — Record & Generate Demo Videos"
   },
   "background": {
     "service_worker": "background.js"

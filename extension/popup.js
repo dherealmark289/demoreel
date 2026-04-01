@@ -1,197 +1,323 @@
 /**
- * DemoReel Recorder — popup.js
- * Handles recording flow: start → stop → describe → upload → show result
+ * DemoReel Recorder — popup.js v2
+ * Single clip + Multi-clip reel recording
  */
 
-const DEMOREEL_URL = 'https://demoreel-production.up.railway.app';
+const DEFAULT_SERVER = 'https://demoreel-production.up.railway.app';
 
+let serverUrl = DEFAULT_SERVER;
 let mediaRecorder = null;
 let recordedChunks = [];
 let stream = null;
 let recordingBlob = null;
 
-// DOM refs
-const statusDot = document.getElementById('statusDot');
-const statusText = document.getElementById('statusText');
-const preRecordPanel = document.getElementById('preRecordPanel');
-const recordingPanel = document.getElementById('recordingPanel');
-const describePanel = document.getElementById('describePanel');
-const resultPanel = document.getElementById('resultPanel');
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const generateBtn = document.getElementById('generateBtn');
-const discardBtn = document.getElementById('discardBtn');
-const regionToggle = document.getElementById('regionToggle');
-const descriptionInput = document.getElementById('descriptionInput');
-const titleInput = document.getElementById('titleInput');
-const jobIdDisplay = document.getElementById('jobIdDisplay');
-const watchLink = document.getElementById('watchLink');
-const voiceSelect = document.getElementById('voiceSelect');
-const toneSelect = document.getElementById('toneSelect');
-const purposeSelect = document.getElementById('purposeSelect');
+// Reel state
+let reelClips = []; // [{name, blob, size}]
+let reelMediaRecorder = null;
+let reelStream = null;
+let reelChunks = [];
 
-function setStatus(text, state) {
-  statusText.textContent = text;
-  statusDot.className = 'status-dot ' + (state || '');
+// ── Init ──────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Load saved server URL
+  const cfg = await chrome.storage.local.get(['serverUrl', 'recentJobs', 'autoOpen']);
+  if (cfg.serverUrl) {
+    serverUrl = cfg.serverUrl;
+    document.getElementById('cfg-server').value = serverUrl;
+  }
+  if (cfg.autoOpen !== undefined) {
+    document.getElementById('cfg-autoopen').checked = cfg.autoOpen;
+  }
+
+  // Wire settings save
+  document.getElementById('cfg-server').addEventListener('change', (e) => {
+    serverUrl = e.target.value.trim().replace(/\/$/, '') || DEFAULT_SERVER;
+    chrome.storage.local.set({ serverUrl });
+  });
+  document.getElementById('cfg-autoopen').addEventListener('change', (e) => {
+    chrome.storage.local.set({ autoOpen: e.target.checked });
+  });
+  document.getElementById('cfg-watermark').addEventListener('change', (e) => {
+    chrome.storage.local.set({ watermark: e.target.checked });
+  });
+
+  // Recent jobs
+  renderRecentJobs(cfg.recentJobs || []);
+
+  // Cursor pill clicks
+  document.querySelectorAll('#cursor-pills .pill').forEach(p => {
+    p.addEventListener('click', () => {
+      document.querySelectorAll('#cursor-pills .pill').forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+    });
+  });
+
+  // Wires
+  document.getElementById('s-start').addEventListener('click', singleStart);
+  document.getElementById('s-stop').addEventListener('click', singleStop);
+  document.getElementById('s-generate').addEventListener('click', singleGenerate);
+  document.getElementById('s-discard').addEventListener('click', singleDiscard);
+  document.getElementById('s-region').addEventListener('change', handleRegionToggle);
+});
+
+// ── Tab Switcher ──────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const names = ['single', 'reel', 'settings'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach((p, i) => {
+    const names = ['tab-single', 'tab-reel', 'tab-settings'];
+    p.classList.toggle('active', p.id === `tab-${name}`);
+  });
 }
 
-function showPanel(panelId) {
-  [preRecordPanel, recordingPanel, describePanel, resultPanel].forEach(p => p.classList.add('hidden'));
-  document.getElementById(panelId).classList.remove('hidden');
+// ── SINGLE CLIP ───────────────────────────────────────────────────
+function sSetStatus(text, state) {
+  document.getElementById('s-status').textContent = text;
+  const dot = document.getElementById('s-dot');
+  dot.className = 'dot ' + (state || '');
+}
+function sShow(id) {
+  ['s-pre', 's-recording', 's-describe', 's-result'].forEach(x => {
+    const el = document.getElementById(x);
+    if (el) el.classList.toggle('hidden', x !== id);
+  });
 }
 
-// ── Start Recording ──────────────────────────────────────────────────────────
-startBtn.addEventListener('click', async () => {
+async function singleStart() {
   try {
-    setStatus('Requesting screen access...', '');
-
-    const constraints = {
-      video: {
-        cursor: 'always',
-      },
-      audio: false, // system audio requires special handling
-    };
-
-    stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+    sSetStatus('Requesting screen access...', '');
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: document.getElementById('s-cursor').checked ? 'always' : 'never' },
+      audio: false,
+    });
 
     recordedChunks = [];
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-        ? 'video/webm;codecs=vp9' 
-        : 'video/webm',
-    });
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
-
+    const mimeType = getSupportedMime();
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
-      recordingBlob = new Blob(recordedChunks, { type: 'video/webm' });
-      setStatus(`Recorded ${(recordingBlob.size / 1024 / 1024).toFixed(1)} MB`, 'ready');
-      showPanel('describePanel');
+      recordingBlob = new Blob(recordedChunks, { type: mimeType });
+      sSetStatus(`Recorded ${formatSize(recordingBlob.size)}`, 'ready');
+      sShow('s-describe');
     };
-
-    // Auto-stop when user closes screen share
-    stream.getVideoTracks()[0].addEventListener('ended', () => {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        stream.getTracks().forEach(t => t.stop());
-      }
-    });
-
-    mediaRecorder.start(1000); // collect chunks every second
-
-    setStatus('Recording...', 'recording');
-    showPanel('recordingPanel');
-
+    stream.getVideoTracks()[0].addEventListener('ended', () => singleStop());
+    mediaRecorder.start(500);
+    sSetStatus('Recording...', 'recording');
+    sShow('s-recording');
   } catch (err) {
-    if (err.name === 'NotAllowedError') {
-      setStatus('Permission denied', '');
-    } else {
-      setStatus('Error: ' + err.message, '');
-    }
-    console.error('[DemoReel] Start recording error:', err);
+    sSetStatus(err.name === 'NotAllowedError' ? 'Permission denied' : err.message, '');
   }
-});
+}
 
-// ── Stop Recording ────────────────────────────────────────────────────────────
-stopBtn.addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-  }
-  if (stream) {
-    stream.getTracks().forEach(t => t.stop());
-    stream = null;
-  }
-  setStatus('Processing recording...', 'processing');
-});
+function singleStop() {
+  if (mediaRecorder?.state !== 'inactive') mediaRecorder?.stop();
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+  sSetStatus('Processing...', 'processing');
+}
 
-// ── Generate Demo ─────────────────────────────────────────────────────────────
-generateBtn.addEventListener('click', async () => {
-  if (!recordingBlob) {
-    setStatus('No recording found', '');
-    return;
-  }
+async function singleGenerate() {
+  const desc = document.getElementById('s-desc').value.trim();
+  const title = document.getElementById('s-title').value.trim();
+  if (!desc) { document.getElementById('s-desc').focus(); return; }
+  if (!recordingBlob) return;
 
-  const description = descriptionInput.value.trim();
-  const title = titleInput.value.trim();
-  const voice = voiceSelect.value;
-  const tone = toneSelect.value;
-  const purpose = purposeSelect.value;
-
-  if (!description) {
-    descriptionInput.focus();
-    descriptionInput.placeholder = '⚠️ Please describe this feature first...';
-    return;
-  }
-
-  generateBtn.disabled = true;
-  generateBtn.textContent = '⏳ Uploading...';
-  setStatus('Uploading to DemoReel...', 'processing');
+  const btn = document.getElementById('s-generate');
+  btn.disabled = true; btn.textContent = '⏳ Uploading...';
+  sSetStatus('Uploading to DemoReel...', 'processing');
 
   try {
-    const formData = new FormData();
-    formData.append('recording', recordingBlob, 'recording.webm');
-    formData.append('description', description);
-    formData.append('title', title || description.slice(0, 50));
-    formData.append('voice', voice);
-    formData.append('tone', tone);
-    formData.append('purpose', purpose);
-    formData.append('duration', '30');
+    const fd = new FormData();
+    fd.append('recording', recordingBlob, 'recording.webm');
+    fd.append('description', desc);
+    fd.append('title', title || desc.slice(0, 50));
+    fd.append('voice', document.getElementById('s-voice').value);
+    fd.append('tone', document.getElementById('s-tone').value);
+    fd.append('purpose', 'product-demo');
+    fd.append('duration', '30');
 
-    const response = await fetch(`${DEMOREEL_URL}/api/upload-recording`, {
-      method: 'POST',
-      body: formData,
-    });
+    const res = await fetch(`${serverUrl}/api/upload-recording`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    const { id } = await res.json();
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error(errData.error || `HTTP ${response.status}`);
-    }
+    saveJob(id, title || desc.slice(0, 30));
+    document.getElementById('s-jobid').textContent = `Job: ${id}`;
+    document.getElementById('s-watch').href = `${serverUrl}/?job=${id}`;
+    sShow('s-result');
+    sSetStatus('Pipeline running!', 'processing');
 
-    const data = await response.json();
-    const jobId = data.id;
-
-    // Show result
-    jobIdDisplay.textContent = `Job ID: ${jobId}`;
-    watchLink.href = `${DEMOREEL_URL}/?job=${jobId}`;
-    showPanel('resultPanel');
-    setStatus('Pipeline running...', 'processing');
-
-    // Save to extension storage
-    chrome.storage.local.get(['recentJobs'], (result) => {
-      const jobs = result.recentJobs || [];
-      jobs.unshift({ id: jobId, title: title || description.slice(0, 30), createdAt: Date.now() });
-      chrome.storage.local.set({ recentJobs: jobs.slice(0, 10) });
-    });
+    const cfg = await chrome.storage.local.get(['autoOpen']);
+    if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/?job=${id}` });
 
   } catch (err) {
-    generateBtn.disabled = false;
-    generateBtn.textContent = '🚀 Generate Demo Video';
-    setStatus('Upload failed: ' + err.message, '');
-    console.error('[DemoReel] Upload error:', err);
+    sSetStatus('Upload failed: ' + err.message, '');
+  } finally {
+    btn.disabled = false; btn.textContent = '🚀 Generate Demo Video';
   }
-});
+}
 
-// ── Discard ───────────────────────────────────────────────────────────────────
-discardBtn.addEventListener('click', () => {
-  recordingBlob = null;
-  recordedChunks = [];
-  descriptionInput.value = '';
-  titleInput.value = '';
-  showPanel('preRecordPanel');
-  setStatus('Ready to record', 'ready');
-});
+function singleDiscard() {
+  recordingBlob = null; recordedChunks = [];
+  document.getElementById('s-desc').value = '';
+  document.getElementById('s-title').value = '';
+  sShow('s-pre');
+  sSetStatus('Ready to record', 'ready');
+}
 
-// ── Region Select (inject content.js) ─────────────────────────────────────────
-regionToggle.addEventListener('change', async () => {
-  if (regionToggle.checked) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function handleRegionToggle() {
+  if (!document.getElementById('s-region').checked) return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
     chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
-        window.postMessage({ type: 'DEMOREEL_REGION_SELECT' }, '*');
-      },
+      func: () => window.postMessage({ type: 'DEMOREEL_REGION_SELECT' }, '*'),
     });
+    window.close(); // close popup to let user interact with page
   }
-});
+}
+
+// ── MULTI-CLIP REEL ───────────────────────────────────────────────
+function renderReelClips() {
+  const el = document.getElementById('reel-clips');
+  if (!reelClips.length) {
+    el.innerHTML = '<div class="clip-empty">No clips yet. Record or upload clips below.</div>';
+    return;
+  }
+  el.innerHTML = reelClips.map((c, i) => `
+    <div class="clip-item">
+      <div class="clip-num">${i + 1}</div>
+      <div class="clip-name" title="${c.name}">${c.name}</div>
+      <div class="clip-size">${formatSize(c.size)}</div>
+      <div class="clip-del" onclick="reelRemoveClip(${i})">✕</div>
+    </div>
+  `).join('');
+}
+
+function reelRemoveClip(i) {
+  reelClips.splice(i, 1);
+  renderReelClips();
+}
+
+async function reelRecordClip() {
+  try {
+    document.getElementById('reel-recording-bar').classList.remove('hidden');
+    document.getElementById('reel-clip-num').textContent = reelClips.length + 1;
+    document.getElementById('reel-record-btn').disabled = true;
+
+    reelStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
+    reelChunks = [];
+    const mimeType = getSupportedMime();
+    reelMediaRecorder = new MediaRecorder(reelStream, { mimeType });
+    reelMediaRecorder.ondataavailable = e => { if (e.data?.size > 0) reelChunks.push(e.data); };
+    reelMediaRecorder.onstop = () => {
+      const blob = new Blob(reelChunks, { type: mimeType });
+      reelClips.push({ name: `Clip ${reelClips.length + 1}`, blob, size: blob.size });
+      renderReelClips();
+      document.getElementById('reel-recording-bar').classList.add('hidden');
+      document.getElementById('reel-record-btn').disabled = false;
+    };
+    reelStream.getVideoTracks()[0].addEventListener('ended', reelStopClip);
+    reelMediaRecorder.start(500);
+  } catch (err) {
+    document.getElementById('reel-recording-bar').classList.add('hidden');
+    document.getElementById('reel-record-btn').disabled = false;
+  }
+}
+
+function reelStopClip() {
+  if (reelMediaRecorder?.state !== 'inactive') reelMediaRecorder?.stop();
+  reelStream?.getTracks().forEach(t => t.stop());
+  reelStream = null;
+}
+
+function reelAddUpload(event) {
+  const files = Array.from(event.target.files);
+  files.forEach(f => {
+    reelClips.push({ name: f.name, blob: f, size: f.size });
+  });
+  renderReelClips();
+  event.target.value = '';
+}
+
+async function generateReel() {
+  const warnEl = document.getElementById('reel-warn');
+  warnEl.classList.add('hidden');
+
+  const desc = document.getElementById('reel-desc').value.trim();
+  if (!desc) { warnEl.textContent = '⚠️ Please describe the reel purpose.'; warnEl.classList.remove('hidden'); return; }
+  if (reelClips.length < 2) { warnEl.textContent = '⚠️ Add at least 2 clips for a reel.'; warnEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('reel-generate');
+  btn.disabled = true; btn.textContent = '⏳ Uploading clips...';
+
+  try {
+    const fd = new FormData();
+    reelClips.forEach((c, i) => fd.append(`clip_${i}`, c.blob, c.name.endsWith('.webm') ? c.name : c.name + '.webm'));
+    fd.append('description', desc);
+    fd.append('sfx', document.getElementById('reel-sfx').value);
+    fd.append('cursor', getActivePill('cursor-pills'));
+    fd.append('autoZoom', document.getElementById('reel-autozoom').checked);
+    fd.append('voice', document.getElementById('reel-voice').value);
+    fd.append('tone', document.getElementById('reel-tone').value);
+    fd.append('clipCount', reelClips.length);
+
+    const res = await fetch(`${serverUrl}/api/upload-reel`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    const { id } = await res.json();
+
+    saveJob(id, desc.slice(0, 30) + ' (reel)');
+    document.getElementById('reel-jobid').textContent = `Job: ${id}`;
+    document.getElementById('reel-watch').href = `${serverUrl}/?job=${id}`;
+    document.getElementById('reel-result').classList.remove('hidden');
+
+    const cfg = await chrome.storage.local.get(['autoOpen']);
+    if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/?job=${id}` });
+
+  } catch (err) {
+    warnEl.textContent = '❌ ' + err.message;
+    warnEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = '🚀 Generate Teaser Reel';
+  }
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────
+function renderRecentJobs(jobs) {
+  const el = document.getElementById('recent-jobs');
+  if (!jobs.length) { el.textContent = 'No jobs yet.'; return; }
+  el.innerHTML = jobs.slice(0, 5).map(j => `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;">${j.title}</span>
+      <a href="${serverUrl}/?job=${j.id}" target="_blank" style="color:#60a5fa;font-size:0.7rem;flex-shrink:0;margin-left:6px;">→ Open</a>
+    </div>
+  `).join('');
+}
+
+async function clearJobs() {
+  await chrome.storage.local.set({ recentJobs: [] });
+  renderRecentJobs([]);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function getSupportedMime() {
+  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  return types.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+}
+
+function formatSize(bytes) {
+  if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  return (bytes / 1024).toFixed(0) + ' KB';
+}
+
+function getActivePill(containerId) {
+  const active = document.querySelector(`#${containerId} .pill.active`);
+  return active ? active.dataset.cursor : 'smooth';
+}
+
+async function saveJob(id, title) {
+  const { recentJobs = [] } = await chrome.storage.local.get(['recentJobs']);
+  recentJobs.unshift({ id, title, createdAt: Date.now() });
+  chrome.storage.local.set({ recentJobs: recentJobs.slice(0, 20) });
+}
