@@ -23,6 +23,21 @@
     .state { display: none; }
     .state.active { display: block; }
 
+    /* Voice input button */
+    .voice-input-row { display: flex; gap: 8px; align-items: flex-start; }
+    .voice-input-row textarea { flex: 1; }
+    .mic-btn {
+      width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg3); cursor: pointer; font-size: 1.2rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.2s; margin-top: 0;
+    }
+    .mic-btn:hover { border-color: var(--accent); background: rgba(37,99,235,0.1); }
+    .mic-btn.listening { background: rgba(220,38,38,0.15); border-color: var(--red); animation: micpulse 1s infinite; }
+    @keyframes micpulse { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.4)} 50%{box-shadow:0 0 0 8px rgba(220,38,38,0)} }
+    .mic-hint { font-size: 0.72rem; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+    .mic-hint.active { color: #fca5a5; }
+
     /* Setup state */
     .section-title { font-size: 0.88rem; font-weight: 700; margin-bottom: 6px; }
     .section-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 18px; }
@@ -119,14 +134,10 @@
   <!-- STATE: Setup -->
   <div class="state active" id="state-setup">
     <div class="section-title">Ready to record</div>
-    <div class="section-sub">Choose your options, then start recording.</div>
+    <div class="section-sub">Chrome will ask you to share your screen — choose a tab, window, or full screen.</div>
 
     <div class="option-row">
-      <div class="option-label">🟦 Select region <small>Draw a crop area before recording</small></div>
-      <label class="tog"><input type="checkbox" id="opt-region"><span class="ts"></span></label>
-    </div>
-    <div class="option-row">
-      <div class="option-label">📹 Webcam overlay <small>Add face bubble</small></div>
+      <div class="option-label">📹 Webcam overlay <small>Add face bubble in corner</small></div>
       <label class="tog"><input type="checkbox" id="opt-webcam"><span class="ts"></span></label>
     </div>
     <div class="option-row">
@@ -139,9 +150,10 @@
     </div>
 
     <div id="setup-warn" class="warn" style="display:none;margin-top:14px;"></div>
-    <button class="btn btn-primary" id="btn-start">⏺ Start Recording</button>
-    <button class="btn btn-ghost" id="btn-select-region" style="margin-top:8px;">🟦 Select Region First</button>
-    <div id="region-selected-label" style="display:none;text-align:center;font-size:0.8rem;color:#4ade80;margin-top:8px;">✅ Region selected</div>
+    <button class="btn btn-primary" id="btn-start" style="margin-top:18px;">⏺ Start Recording</button>
+    <div style="margin-top:10px;padding:10px 12px;background:rgba(37,99,235,0.07);border:1px solid rgba(37,99,235,0.2);border-radius:8px;font-size:0.78rem;color:#93c5fd;line-height:1.6;">
+      💡 <strong>Tip:</strong> After clicking Start, Chrome shows a screen picker. Choose your tab, window, or full screen from there.
+    </div>
   </div>
 
   <!-- STATE: Recording -->
@@ -167,7 +179,11 @@
     <input type="text" id="desc-title" placeholder="e.g. Drag & Drop Upload">
 
     <span class="lbl">What did you just record? *</span>
-    <textarea id="desc-text" placeholder="Describe the feature you showed. What problem does it solve? What steps did you demonstrate?"></textarea>
+    <div class="mic-hint" id="mic-hint">🎙️ Tap the mic and describe it out loud — or type below</div>
+    <div class="voice-input-row">
+      <textarea id="desc-text" placeholder="Describe the feature you showed. What problem does it solve? What steps did you demonstrate?"></textarea>
+      <button class="mic-btn" id="mic-btn" title="Speak your description">🎙️</button>
+    </div>
 
     <div class="options-grid">
       <div>
@@ -251,7 +267,73 @@ document.getElementById('btn-stop').addEventListener('click', stopRecording);
 document.getElementById('btn-generate').addEventListener('click', generate);
 document.getElementById('btn-re-record').addEventListener('click', () => { showState('setup'); });
 document.getElementById('btn-record-again').addEventListener('click', () => { location.reload(); });
-document.getElementById('btn-select-region').addEventListener('click', startRegionSelect);
+document.getElementById('mic-btn').addEventListener('click', toggleVoiceInput);
+
+// ── Voice input via Web Speech API ───────────────────────────────
+let recognition = null;
+let isListening = false;
+
+function toggleVoiceInput() {
+  if (isListening) {
+    stopVoice();
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    document.getElementById('mic-hint').textContent = '⚠️ Voice input not supported in this browser. Please use Chrome.';
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  const textarea = document.getElementById('desc-text');
+  const micBtn = document.getElementById('mic-btn');
+  const hint = document.getElementById('mic-hint');
+  let baseText = textarea.value;
+
+  recognition.onstart = () => {
+    isListening = true;
+    micBtn.textContent = '⏹';
+    micBtn.classList.add('listening');
+    hint.textContent = '🔴 Listening... speak now. Tap ⏹ to stop.';
+    hint.classList.add('active');
+  };
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    let final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t + ' ';
+      else interim += t;
+    }
+    baseText += final;
+    textarea.value = baseText + interim;
+  };
+
+  recognition.onend = () => stopVoice();
+  recognition.onerror = (e) => {
+    hint.textContent = '⚠️ Voice error: ' + e.error + '. Try again.';
+    stopVoice();
+  };
+
+  recognition.start();
+}
+
+function stopVoice() {
+  isListening = false;
+  const micBtn = document.getElementById('mic-btn');
+  const hint = document.getElementById('mic-hint');
+  micBtn.textContent = '🎙️';
+  micBtn.classList.remove('listening');
+  hint.textContent = '🎙️ Tap the mic and describe it out loud — or type below';
+  hint.classList.remove('active');
+  recognition?.stop();
+}
 
 // Parse URL params (passed from extension)
 const params = new URLSearchParams(location.search);
@@ -259,53 +341,7 @@ if (params.get('voice')) document.getElementById('desc-voice').value = params.ge
 if (params.get('tone')) document.getElementById('desc-tone').value = params.get('tone');
 if (params.get('purpose')) document.getElementById('desc-purpose').value = params.get('purpose');
 
-// ── Region Select ─────────────────────────────────────────────────
-function startRegionSelect() {
-  const overlay = document.getElementById('region-overlay');
-  const box = document.getElementById('region-box');
-  const hint = document.getElementById('region-hint');
-  let startX, startY, selecting = false;
-
-  overlay.classList.add('active');
-  box.style.display = 'none';
-
-  function onMouseDown(e) {
-    selecting = true;
-    startX = e.clientX; startY = e.clientY;
-    box.style.cssText = `display:block;left:${startX}px;top:${startY}px;width:0;height:0;`;
-    hint.style.display = 'none';
-  }
-  function onMouseMove(e) {
-    if (!selecting) return;
-    const x = Math.min(e.clientX, startX), y = Math.min(e.clientY, startY);
-    const w = Math.abs(e.clientX - startX), h = Math.abs(e.clientY - startY);
-    box.style.cssText = `display:block;left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
-  }
-  function onMouseUp(e) {
-    if (!selecting) return;
-    selecting = false;
-    const x = Math.min(e.clientX, startX), y = Math.min(e.clientY, startY);
-    const w = Math.abs(e.clientX - startX), h = Math.abs(e.clientY - startY);
-    overlay.classList.remove('active');
-    overlay.removeEventListener('mousedown', onMouseDown);
-    overlay.removeEventListener('mousemove', onMouseMove);
-    overlay.removeEventListener('mouseup', onMouseUp);
-    if (w > 20 && h > 20) {
-      selectedRegion = { x, y, width: w, height: h };
-      document.getElementById('region-selected-label').style.display = 'block';
-    }
-  }
-  function onKeyDown(e) {
-    if (e.key === 'Escape') {
-      overlay.classList.remove('active');
-      document.removeEventListener('keydown', onKeyDown);
-    }
-  }
-  overlay.addEventListener('mousedown', onMouseDown);
-  overlay.addEventListener('mousemove', onMouseMove);
-  overlay.addEventListener('mouseup', onMouseUp);
-  document.addEventListener('keydown', onKeyDown);
-}
+// Region select removed — Chrome's native screen picker handles tab/window/region selection
 
 // ── Recording ─────────────────────────────────────────────────────
 async function startRecording() {
