@@ -3,49 +3,63 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DemoReel — Recording</title>
+  <title>DemoReel — Recording Studio</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #0d1117; --bg2: #161b22; --bg3: #1c2431;
+      --bg: #0d1117; --bg2: #161b22; --bg3: #1c2431; --bg4: #21262d;
       --border: #30363d; --text: #e6edf3; --muted: #8b949e;
       --accent: #2563eb; --grad: linear-gradient(135deg,#2563eb,#7c3aed);
       --green: #16a34a; --red: #dc2626;
     }
-    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
-    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px; max-width: 480px; width: 90%; }
-    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; justify-content: center; }
-    .logo-icon { width: 40px; height: 40px; background: var(--grad); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-    .logo-text { font-size: 1.2rem; font-weight: 800; background: linear-gradient(90deg,#fff,#a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    /* ── Layout ── */
+    .shell { display: flex; flex-direction: column; min-height: 100vh; }
+    .topbar { background: var(--grad); padding: 12px 24px; display: flex; align-items: center; gap: 12px; }
+    .topbar-logo { font-size: 1.2rem; font-weight: 800; color: #fff; }
+    .topbar-sub { font-size: 0.75rem; opacity: 0.8; color: #fff; }
+    .topbar-right { margin-left: auto; display: flex; gap: 8px; }
+    .topbar-btn { padding: 6px 14px; border-radius: 8px; border: none; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+    .topbar-btn-ghost { background: rgba(255,255,255,0.15); color: #fff; }
+    .topbar-btn-ghost:hover { background: rgba(255,255,255,0.25); }
+
+    .body { display: flex; flex: 1; }
+
+    /* ── Sidebar ── */
+    .sidebar { width: 260px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); padding: 16px 0; overflow-y: auto; }
+    .sidebar-section { padding: 6px 16px 4px; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+    .template-item {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px;
+      cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent;
+    }
+    .template-item:hover { background: var(--bg3); }
+    .template-item.active { background: rgba(37,99,235,0.1); border-left-color: var(--accent); }
+    .t-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+    .t-name { font-size: 0.82rem; font-weight: 600; }
+    .t-desc { font-size: 0.7rem; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+
+    /* ── Main ── */
+    .main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 28px 20px; }
+    .main-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px; width: 100%; max-width: 560px; }
+
+    /* ── Template guide ── */
+    .template-guide { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
+    .guide-title { font-size: 0.82rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .guide-steps { list-style: none; }
+    .guide-steps li { display: flex; gap: 10px; font-size: 0.8rem; color: var(--muted); padding: 4px 0; line-height: 1.5; }
+    .guide-steps li::before { content: attr(data-n); background: var(--accent); color: #fff; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 0.62rem; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    .guide-tip { font-size: 0.72rem; color: #93c5fd; margin-top: 8px; background: rgba(37,99,235,0.08); border-radius: 6px; padding: 6px 8px; }
 
     /* States */
     .state { display: none; }
     .state.active { display: block; }
 
-    /* Voice input button */
-    .voice-input-row { display: flex; gap: 8px; align-items: flex-start; }
-    .voice-input-row textarea { flex: 1; }
-    .mic-btn {
-      width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--border);
-      background: var(--bg3); cursor: pointer; font-size: 1.2rem;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: all 0.2s; margin-top: 0;
-    }
-    .mic-btn:hover { border-color: var(--accent); background: rgba(37,99,235,0.1); }
-    .mic-btn.listening { background: rgba(220,38,38,0.15); border-color: var(--red); animation: micpulse 1s infinite; }
-    @keyframes micpulse { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.4)} 50%{box-shadow:0 0 0 8px rgba(220,38,38,0)} }
-    .mic-hint { font-size: 0.72rem; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
-    .mic-hint.active { color: #fca5a5; }
-
-    /* Setup state */
-    .section-title { font-size: 0.88rem; font-weight: 700; margin-bottom: 6px; }
-    .section-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 18px; }
-
-    .option-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    /* Options */
+    .option-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
     .option-row:last-of-type { border-bottom: none; }
-    .option-label { font-size: 0.88rem; }
-    .option-label small { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .option-label { font-size: 0.85rem; }
+    .option-label small { display: block; font-size: 0.7rem; color: var(--muted); margin-top: 1px; }
     .tog { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
     .tog input { opacity: 0; width: 0; height: 0; }
     .ts { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: .2s; }
@@ -53,339 +67,593 @@
     input:checked + .ts { background: var(--accent); }
     input:checked + .ts::before { transform: translateX(18px); }
 
-    .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; margin-top: 18px; }
+    /* SFX Picker */
+    .sfx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 16px; }
+    .sfx-item {
+      background: var(--bg3); border: 1.5px solid var(--border); border-radius: 9px;
+      padding: 10px 8px; text-align: center; cursor: pointer; transition: all 0.15s;
+    }
+    .sfx-item:hover { border-color: var(--accent); background: rgba(37,99,235,0.07); }
+    .sfx-item.selected { border-color: var(--accent); background: rgba(37,99,235,0.15); }
+    .sfx-item.playing { border-color: #4ade80; background: rgba(22,163,74,0.1); }
+    .sfx-icon { font-size: 1.4rem; margin-bottom: 4px; }
+    .sfx-name { font-size: 0.7rem; font-weight: 600; }
+    .sfx-mood { font-size: 0.62rem; color: var(--muted); margin-top: 1px; }
+    .sfx-play { font-size: 0.58rem; color: #93c5fd; margin-top: 3px; }
+    .sfx-none { background: var(--bg4); }
+    .sfx-section-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin-bottom: 6px; display: block; }
+
+    /* Buttons */
+    .btn { width: 100%; padding: 13px; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; margin-top: 14px; }
     .btn:hover { opacity: 0.88; }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .btn-primary { background: var(--grad); color: #fff; }
-    .btn-danger { background: var(--red); color: #fff; font-size: 1.1rem; }
-    .btn-green { background: var(--green); color: #fff; }
-    .btn-ghost { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+    .btn-danger { background: var(--red); color: #fff; font-size: 1rem; }
+    .btn-ghost { background: var(--bg4); color: var(--text); border: 1px solid var(--border); font-size: 0.85rem; }
 
     /* Recording state */
-    .recording-indicator {
-      text-align: center; margin-bottom: 24px;
-    }
-    .rec-dot-big {
-      width: 20px; height: 20px; background: var(--red); border-radius: 50%;
-      display: inline-block; animation: recpulse 1.2s ease-in-out infinite;
-      margin-right: 8px; vertical-align: middle;
-    }
-    @keyframes recpulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
-    .rec-label { font-size: 1rem; font-weight: 700; vertical-align: middle; color: #fca5a5; }
-    .timer-display { font-size: 3.5rem; font-weight: 800; text-align: center; letter-spacing: 0.05em; margin: 16px 0; font-variant-numeric: tabular-nums; }
-    .timer-sub { text-align: center; font-size: 0.82rem; color: var(--muted); margin-bottom: 24px; }
-    .preview-box { width: 100%; aspect-ratio: 16/9; background: var(--bg3); border-radius: 10px; overflow: hidden; margin-bottom: 18px; display: flex; align-items: center; justify-content: center; position: relative; }
+    .rec-header { text-align: center; margin-bottom: 20px; }
+    .rec-dot { width: 18px; height: 18px; background: var(--red); border-radius: 50%; display: inline-block; animation: rpulse 1.2s ease-in-out infinite; margin-right: 7px; vertical-align: middle; }
+    @keyframes rpulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.35);opacity:0.7} }
+    .rec-label-text { font-size: 0.95rem; font-weight: 700; color: #fca5a5; vertical-align: middle; }
+    .timer { font-size: 4rem; font-weight: 800; text-align: center; letter-spacing: 0.04em; margin: 10px 0; font-variant-numeric: tabular-nums; }
+    .preview-box { width: 100%; aspect-ratio: 16/9; background: var(--bg3); border-radius: 10px; overflow: hidden; margin: 14px 0; display: flex; align-items: center; justify-content: center; }
     .preview-box video { width: 100%; height: 100%; object-fit: contain; }
-    .preview-hint { font-size: 0.8rem; color: var(--muted); text-align: center; }
+    .preview-placeholder { color: var(--muted); font-size: 0.82rem; text-align: center; }
 
-    /* Region selector overlay */
-    #region-overlay {
-      display: none; position: fixed; inset: 0; z-index: 9999;
-      background: rgba(0,0,0,0.5); cursor: crosshair; user-select: none;
-    }
-    #region-overlay.active { display: block; }
-    #region-box {
-      position: absolute; border: 2px solid #2563eb;
-      background: rgba(37,99,235,0.15); display: none;
-    }
-    #region-hint {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-      background: rgba(0,0,0,0.8); color: #fff; padding: 12px 20px;
-      border-radius: 8px; font-size: 0.9rem; text-align: center;
-      pointer-events: none;
-    }
-
-    /* Describe state */
-    textarea, input[type=text] { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.9rem; outline: none; font-family: inherit; resize: vertical; }
-    textarea { min-height: 80px; margin-bottom: 12px; }
-    input[type=text] { margin-bottom: 12px; }
+    /* Describe */
+    .lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin-bottom: 5px; display: block; margin-top: 12px; }
+    textarea, input[type=text] { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.88rem; outline: none; font-family: inherit; }
+    textarea { min-height: 80px; resize: vertical; }
     textarea:focus, input:focus { border-color: var(--accent); }
-    select { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.9rem; outline: none; margin-bottom: 12px; }
-    .lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin-bottom: 5px; display: block; }
+    select { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.88rem; outline: none; margin-top: 0; }
+    .voice-row { display: flex; gap: 8px; align-items: flex-start; }
+    .voice-row textarea { flex: 1; }
+    .mic-btn { width: 44px; height: 44px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--bg4); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
+    .mic-btn:hover { border-color: var(--accent); }
+    .mic-btn.listening { border-color: var(--red); background: rgba(220,38,38,0.1); animation: mpulse 1s infinite; }
+    @keyframes mpulse { 0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.4)} 50%{box-shadow:0 0 0 8px rgba(220,38,38,0)} }
+    .mic-hint { font-size: 0.72rem; color: var(--muted); margin-bottom: 6px; }
+    .mic-hint.active { color: #fca5a5; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .warn { background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); border-radius: 6px; padding: 8px 12px; font-size: 0.8rem; color: #fca5a5; margin-top: 10px; }
+    .info { background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.2); border-radius: 7px; padding: 9px 12px; font-size: 0.78rem; color: #93c5fd; margin-top: 10px; line-height: 1.5; }
 
-    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-
-    .warn { background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); border-radius: 6px; padding: 8px 12px; font-size: 0.82rem; color: #fca5a5; margin-bottom: 10px; }
-    .success-card { text-align: center; }
-    .success-icon { font-size: 3rem; margin-bottom: 12px; }
+    /* Success */
+    .success-state { text-align: center; }
+    .success-icon { font-size: 3rem; margin-bottom: 10px; }
     .success-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
-    .success-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 20px; }
-    .success-link { display: block; padding: 12px; background: var(--grad); color: #fff; border-radius: 10px; text-decoration: none; font-weight: 700; margin-bottom: 8px; }
-    .success-link:hover { opacity: 0.88; }
-    .progress-bar-wrap { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin: 10px 0; }
-    .progress-bar { height: 100%; background: var(--grad); transition: width 0.5s; border-radius: 3px; }
-    .progress-label { font-size: 0.8rem; color: var(--muted); text-align: center; }
+    .progress-wrap { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+    .progress-fill { height: 100%; background: var(--grad); border-radius: 3px; transition: width 0.5s; }
+    .progress-lbl { font-size: 0.78rem; color: var(--muted); }
+    .pipeline-steps { display: flex; gap: 8px; justify-content: center; margin: 14px 0; flex-wrap: wrap; }
+    .ps { padding: 5px 12px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; background: var(--bg3); color: var(--muted); border: 1px solid var(--border); transition: all 0.3s; }
+    .ps.active { background: rgba(37,99,235,0.2); color: #93c5fd; border-color: var(--accent); }
+    .ps.done { background: rgba(22,163,74,0.15); color: #4ade80; border-color: var(--green); }
+    .dashboard-btn { display: block; padding: 13px; background: var(--grad); color: #fff; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 0.95rem; text-align: center; margin-top: 16px; transition: opacity 0.2s; }
+    .dashboard-btn:hover { opacity: 0.88; }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .sidebar { display: none; }
+      .main-card { padding: 18px; }
+    }
   </style>
 </head>
 <body>
+<div class="shell">
 
-<!-- Region Selector Overlay -->
-<div id="region-overlay">
-  <div id="region-box"></div>
-  <div id="region-hint">🎯 Drag to select the region you want to record<br><small>Press Esc to cancel</small></div>
-</div>
-
-<div class="card">
-  <div class="logo">
-    <div class="logo-icon">🎬</div>
-    <div class="logo-text">DemoReel Recording</div>
-  </div>
-
-  <!-- STATE: Setup -->
-  <div class="state active" id="state-setup">
-    <div class="section-title">Ready to record</div>
-    <div class="section-sub">Chrome will ask you to share your screen — choose a tab, window, or full screen.</div>
-
-    <div class="option-row">
-      <div class="option-label">📹 Webcam overlay <small>Add face bubble in corner</small></div>
-      <label class="tog"><input type="checkbox" id="opt-webcam"><span class="ts"></span></label>
+  <div class="topbar">
+    <span style="font-size:1.4rem;">🎬</span>
+    <div>
+      <div class="topbar-logo">DemoReel Studio</div>
+      <div class="topbar-sub">Choose a template → Record → Publish</div>
     </div>
-    <div class="option-row">
-      <div class="option-label">🔐 Auto-blur credentials <small>Hide API keys & passwords</small></div>
-      <label class="tog"><input type="checkbox" id="opt-blur" checked><span class="ts"></span></label>
-    </div>
-    <div class="option-row">
-      <div class="option-label">⚡ Auto-zoom on clicks <small>Zoom in when you interact</small></div>
-      <label class="tog"><input type="checkbox" id="opt-zoom" checked><span class="ts"></span></label>
-    </div>
-
-    <div id="setup-warn" class="warn" style="display:none;margin-top:14px;"></div>
-    <button class="btn btn-primary" id="btn-start" style="margin-top:18px;">⏺ Start Recording</button>
-    <div style="margin-top:10px;padding:10px 12px;background:rgba(37,99,235,0.07);border:1px solid rgba(37,99,235,0.2);border-radius:8px;font-size:0.78rem;color:#93c5fd;line-height:1.6;">
-      💡 <strong>Tip:</strong> After clicking Start, Chrome shows a screen picker. Choose your tab, window, or full screen from there.
+    <div class="topbar-right">
+      <button class="topbar-btn topbar-btn-ghost" id="btn-goto-dashboard">📊 Dashboard</button>
     </div>
   </div>
 
-  <!-- STATE: Recording -->
-  <div class="state" id="state-recording">
-    <div class="recording-indicator">
-      <span class="rec-dot-big"></span>
-      <span class="rec-label">RECORDING</span>
-    </div>
-    <div class="timer-display" id="timer-display">0:00</div>
-    <div class="timer-sub">Your screen is being recorded</div>
-    <div class="preview-box" id="preview-box">
-      <video id="preview-video" muted autoplay playsinline></video>
-    </div>
-    <button class="btn btn-danger" id="btn-stop">⏹ Stop Recording</button>
-  </div>
+  <div class="body">
 
-  <!-- STATE: Describe -->
-  <div class="state" id="state-describe">
-    <div class="section-title">✍️ Describe your recording</div>
-    <div class="section-sub">Claude will write a voiceover script from your description.</div>
+    <!-- Sidebar: Templates -->
+    <aside class="sidebar">
+      <div class="sidebar-section">Video Templates</div>
 
-    <span class="lbl">Feature title</span>
-    <input type="text" id="desc-title" placeholder="e.g. Drag & Drop Upload">
-
-    <span class="lbl">What did you just record? *</span>
-    <div class="mic-hint" id="mic-hint">🎙️ Tap the mic and describe it out loud — or type below</div>
-    <div class="voice-input-row">
-      <textarea id="desc-text" placeholder="Describe the feature you showed. What problem does it solve? What steps did you demonstrate?"></textarea>
-      <button class="mic-btn" id="mic-btn" title="Speak your description">🎙️</button>
-    </div>
-
-    <div class="options-grid">
-      <div>
-        <span class="lbl">Purpose</span>
-        <select id="desc-purpose">
-          <option value="product-demo">Product Demo</option>
-          <option value="showcase">Feature Showcase</option>
-          <option value="tutorial">Tutorial</option>
-          <option value="teaser">Teaser</option>
-        </select>
+      <div class="template-item active" data-template="product-demo">
+        <div class="t-icon">🚀</div>
+        <div>
+          <div class="t-name">Product Demo</div>
+          <div class="t-desc">Full feature walkthrough with VO + captions</div>
+        </div>
       </div>
-      <div>
-        <span class="lbl">Tone</span>
-        <select id="desc-tone">
-          <option value="professional">Professional</option>
-          <option value="casual">Casual</option>
-          <option value="exciting">Exciting</option>
-        </select>
+
+      <div class="template-item" data-template="feature-teaser">
+        <div class="t-icon">⚡</div>
+        <div>
+          <div class="t-name">Feature Teaser</div>
+          <div class="t-desc">15-30s punchy clip for social hype</div>
+        </div>
       </div>
-    </div>
 
-    <span class="lbl">Voice</span>
-    <select id="desc-voice">
-      <option value="alloy">Rachel — calm, professional ♀</option>
-      <option value="echo">Domi — energetic ♀</option>
-      <option value="fable">Bella — warm ♀</option>
-      <option value="onyx">Arnold — deep ♂</option>
-      <option value="nova">Adam — neutral ♂</option>
-    </select>
+      <div class="template-item" data-template="tutorial">
+        <div class="t-icon">📚</div>
+        <div>
+          <div class="t-name">Tutorial</div>
+          <div class="t-desc">Step-by-step walkthrough for users</div>
+        </div>
+      </div>
 
-    <div id="desc-warn" class="warn" style="display:none;"></div>
-    <button class="btn btn-primary" id="btn-generate">🚀 Generate Demo Video</button>
-    <button class="btn btn-ghost" id="btn-re-record" style="margin-top:8px;">🔄 Re-record</button>
-  </div>
+      <div class="template-item" data-template="speed-demo">
+        <div class="t-icon">🏎️</div>
+        <div>
+          <div class="t-name">Speed Demo</div>
+          <div class="t-desc">2x/3x fast walk, great for TikTok/Reels</div>
+        </div>
+      </div>
 
-  <!-- STATE: Uploading -->
-  <div class="state" id="state-uploading">
-    <div style="text-align:center;">
-      <div style="font-size:2rem;margin-bottom:12px;">⬆️</div>
-      <div style="font-size:1rem;font-weight:700;margin-bottom:8px;">Uploading recording...</div>
-      <div class="progress-bar-wrap"><div class="progress-bar" id="upload-progress" style="width:30%"></div></div>
-      <div class="progress-label" id="upload-label">Starting pipeline...</div>
-    </div>
-  </div>
+      <div class="template-item" data-template="multi-reel">
+        <div class="t-icon">🎞️</div>
+        <div>
+          <div class="t-name">Multi-Clip Reel</div>
+          <div class="t-desc">3-5 features → one engaging reel</div>
+        </div>
+      </div>
 
-  <!-- STATE: Success -->
-  <div class="state" id="state-success">
-    <div class="success-card">
-      <div class="success-icon">🎉</div>
-      <div class="success-title">Pipeline Started!</div>
-      <div class="success-sub">Claude is writing your script. ElevenLabs is generating voiceover. Shotstack is assembling your demo video.</div>
-      <div class="progress-bar-wrap"><div class="progress-bar" id="pipeline-progress" style="width:10%"></div></div>
-      <div class="progress-label" id="pipeline-label">Generating script...</div>
-      <a id="dashboard-link" href="/dashboard" target="_blank" class="success-link" style="margin-top:16px;">📊 Open Dashboard →</a>
-      <button class="btn btn-ghost" id="btn-record-again">🎬 Record Another</button>
-    </div>
-  </div>
+      <div class="template-item" data-template="launch-day">
+        <div class="t-icon">🎯</div>
+        <div>
+          <div class="t-name">Launch Day</div>
+          <div class="t-desc">PH / social launch with high-energy edit</div>
+        </div>
+      </div>
 
-</div>
+      <div class="sidebar-section" style="margin-top:12px;">SFX Library</div>
+      <div class="template-item" data-template="sfx-picker">
+        <div class="t-icon">🎵</div>
+        <div>
+          <div class="t-name">Sound Effects</div>
+          <div class="t-desc">Add transitions, impacts & UI sounds</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <div class="main">
+      <div class="main-card">
+
+        <!-- Template guide -->
+        <div class="template-guide" id="template-guide">
+          <!-- populated by JS -->
+        </div>
+
+        <!-- STATE: Setup -->
+        <div class="state active" id="state-setup">
+          <div style="font-size:0.9rem;font-weight:700;margin-bottom:14px;" id="setup-title">🚀 Product Demo — Ready to record</div>
+
+          <div class="option-row">
+            <div class="option-label">📹 Webcam overlay <small>Face bubble in corner</small></div>
+            <label class="tog"><input type="checkbox" id="opt-webcam"><span class="ts"></span></label>
+          </div>
+          <div class="option-row">
+            <div class="option-label">🔐 Auto-blur credentials <small>Hides API keys & passwords</small></div>
+            <label class="tog"><input type="checkbox" id="opt-blur" checked><span class="ts"></span></label>
+          </div>
+          <div class="option-row">
+            <div class="option-label">⚡ Auto-zoom on clicks</div>
+            <label class="tog"><input type="checkbox" id="opt-zoom" checked><span class="ts"></span></label>
+          </div>
+          <div class="option-row">
+            <div class="option-label">⚡ Playback speed</div>
+            <select id="opt-speed" style="width:auto;padding:4px 8px;font-size:0.8rem;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);outline:none;">
+              <option value="1">1x — Normal</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x — Fast</option>
+              <option value="3">3x — Speed reel</option>
+            </select>
+          </div>
+
+          <div id="setup-warn" class="warn" style="display:none;"></div>
+          <div class="info" id="setup-tip">💡 Chrome will ask which screen, tab, or window to record. You choose that at the next step.</div>
+          <button class="btn btn-primary" id="btn-start">⏺ Start Recording</button>
+        </div>
+
+        <!-- STATE: SFX Picker -->
+        <div class="state" id="state-sfx">
+          <div style="font-size:0.9rem;font-weight:700;margin-bottom:12px;">🎵 SFX Library — Choose sounds for your video</div>
+
+          <span class="sfx-section-label">Transitions</span>
+          <div class="sfx-grid" id="sfx-transitions"></div>
+
+          <span class="sfx-section-label" style="margin-top:4px;">Impacts & Drama</span>
+          <div class="sfx-grid" id="sfx-impacts"></div>
+
+          <span class="sfx-section-label" style="margin-top:4px;">UI & Tech</span>
+          <div class="sfx-grid" id="sfx-ui"></div>
+
+          <span class="sfx-section-label" style="margin-top:4px;">No SFX</span>
+          <div class="sfx-grid" id="sfx-none-grid"></div>
+
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:12px;padding:10px;background:var(--bg3);border-radius:8px;">
+            ✅ Selected: <strong id="sfx-selected-label" style="color:var(--text);">None</strong><br>
+            <span style="font-size:0.7rem;">SFX are generated by ElevenLabs and added between clips during assembly.</span>
+          </div>
+          <button class="btn btn-primary" id="btn-sfx-done" style="margin-top:12px;">✅ Apply SFX & Go Record</button>
+        </div>
+
+        <!-- STATE: Recording -->
+        <div class="state" id="state-recording">
+          <div class="rec-header">
+            <span class="rec-dot"></span>
+            <span class="rec-label-text">RECORDING</span>
+          </div>
+          <div class="timer" id="timer-display">0:00</div>
+          <div style="text-align:center;font-size:0.78rem;color:var(--muted);margin-bottom:12px;">Your screen is being captured</div>
+          <div class="preview-box">
+            <video id="preview-video" muted autoplay playsinline></video>
+          </div>
+          <button class="btn btn-danger" id="btn-stop">⏹ Stop Recording</button>
+        </div>
+
+        <!-- STATE: Describe -->
+        <div class="state" id="state-describe">
+          <div style="font-size:0.9rem;font-weight:700;margin-bottom:4px;">✍️ Describe your recording</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-bottom:14px;">Claude turns your description into a voiceover script. Use the mic or type.</div>
+
+          <span class="lbl">Feature title</span>
+          <input type="text" id="desc-title" placeholder="e.g. One-click video recording" style="margin-bottom:10px;">
+
+          <span class="lbl">Describe what you showed *</span>
+          <div class="mic-hint" id="mic-hint">🎙️ Tap the mic and speak — or type below</div>
+          <div class="voice-row">
+            <textarea id="desc-text" placeholder="What feature did you just record? What problem does it solve? What steps did you show?"></textarea>
+            <button class="mic-btn" id="mic-btn">🎙️</button>
+          </div>
+
+          <div class="grid-2" style="margin-top:10px;">
+            <div>
+              <span class="lbl">Purpose</span>
+              <select id="desc-purpose" style="margin-top:0;">
+                <option value="product-demo">Product Demo</option>
+                <option value="showcase">Feature Showcase</option>
+                <option value="tutorial">Tutorial</option>
+                <option value="teaser">Teaser</option>
+              </select>
+            </div>
+            <div>
+              <span class="lbl">Tone</span>
+              <select id="desc-tone" style="margin-top:0;">
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="exciting">Exciting</option>
+                <option value="technical">Technical</option>
+              </select>
+            </div>
+          </div>
+
+          <span class="lbl">Voice</span>
+          <select id="desc-voice" style="margin-top:0;">
+            <option value="alloy">Rachel — calm, professional ♀</option>
+            <option value="echo">Domi — energetic, upbeat ♀</option>
+            <option value="fable">Bella — warm, friendly ♀</option>
+            <option value="onyx">Arnold — deep, authoritative ♂</option>
+            <option value="nova">Adam — neutral, clean ♂</option>
+          </select>
+
+          <div id="desc-warn" class="warn" style="display:none;"></div>
+          <button class="btn btn-primary" id="btn-generate" style="margin-top:14px;">🚀 Generate Demo Video</button>
+          <button class="btn btn-ghost" id="btn-re-record">🔄 Re-record</button>
+        </div>
+
+        <!-- STATE: Uploading -->
+        <div class="state" id="state-uploading">
+          <div style="text-align:center;padding:10px 0;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">⬆️</div>
+            <div style="font-size:1rem;font-weight:700;margin-bottom:8px;">Uploading recording...</div>
+            <div class="progress-wrap"><div class="progress-fill" id="upload-progress" style="width:20%"></div></div>
+            <div class="progress-lbl" id="upload-lbl">Preparing...</div>
+          </div>
+        </div>
+
+        <!-- STATE: Success -->
+        <div class="state" id="state-success">
+          <div class="success-state">
+            <div class="success-icon">🎉</div>
+            <div class="success-title">Pipeline Running!</div>
+            <div style="font-size:0.82rem;color:var(--muted);margin-bottom:12px;">Claude is writing your script. ElevenLabs is generating VO. Shotstack is building your video.</div>
+            <div class="pipeline-steps">
+              <div class="ps active" id="ps-script">📝 Script</div>
+              <div class="ps" id="ps-voice">🎙️ Voice</div>
+              <div class="ps" id="ps-render">🎬 Render</div>
+              <div class="ps" id="ps-done">✅ Done</div>
+            </div>
+            <div class="progress-wrap"><div class="progress-fill" id="pipeline-progress" style="width:5%"></div></div>
+            <div class="progress-lbl" id="pipeline-lbl">Generating script with Claude...</div>
+            <a id="dashboard-link" href="/dashboard" target="_blank" class="dashboard-btn">📊 Open Dashboard →</a>
+            <button class="btn btn-ghost" id="btn-record-again">🎬 Record Another</button>
+          </div>
+        </div>
+
+      </div><!-- /main-card -->
+    </div><!-- /main -->
+  </div><!-- /body -->
+</div><!-- /shell -->
 
 <script>
 const SERVER = location.origin;
+
+// ── SFX Library ───────────────────────────────────────────────────
+const SFX_LIBRARY = {
+  transitions: [
+    { id: 'whoosh-fast', icon: '💨', name: 'Fast Whoosh', mood: 'Snappy cut' },
+    { id: 'swoosh-soft', icon: '🌊', name: 'Soft Swoosh', mood: 'Smooth flow' },
+    { id: 'slide-in', icon: '➡️', name: 'Slide In', mood: 'Clean entry' },
+  ],
+  impacts: [
+    { id: 'cinematic-boom', icon: '💥', name: 'Cinematic Boom', mood: 'Dramatic' },
+    { id: 'punch-hit', icon: '👊', name: 'Punch Hit', mood: 'High energy' },
+    { id: 'deep-thud', icon: '🥁', name: 'Deep Thud', mood: 'Weighty' },
+  ],
+  ui: [
+    { id: 'ui-click', icon: '🖱️', name: 'UI Click', mood: 'Tech/clean' },
+    { id: 'notification', icon: '🔔', name: 'Notification', mood: 'App ping' },
+    { id: 'success-chime', icon: '✨', name: 'Success Chime', mood: 'Completion' },
+  ],
+  none: [
+    { id: 'none', icon: '🔇', name: 'No SFX', mood: 'VO only' },
+  ],
+};
+
+let selectedSfx = 'none';
+
+// ── Templates ─────────────────────────────────────────────────────
+const TEMPLATES = {
+  'product-demo': {
+    icon: '🚀',
+    name: 'Product Demo',
+    purpose: 'product-demo',
+    tone: 'professional',
+    speed: '1',
+    duration: 30,
+    tip: '💡 Best length: 30–60 seconds. Show the full workflow from start to finish.',
+    steps: [
+      { n: '1', text: 'Open your product in a tab or window' },
+      { n: '2', text: 'Click Start Recording — Chrome will ask which screen to share' },
+      { n: '3', text: 'Walk through the feature slowly and clearly' },
+      { n: '4', text: 'Stop recording → speak or type what you just showed' },
+      { n: '5', text: 'Click Generate → get a polished video with voiceover + X post copy' },
+    ],
+    sfxDefault: 'none',
+  },
+  'feature-teaser': {
+    icon: '⚡',
+    name: 'Feature Teaser',
+    purpose: 'teaser',
+    tone: 'exciting',
+    speed: '1',
+    duration: 15,
+    tip: '💡 Keep it 15–20 seconds. Focus on ONE wow moment — the "oh that\'s cool" click.',
+    steps: [
+      { n: '1', text: 'Pick ONE specific feature moment (not the full product)' },
+      { n: '2', text: 'Record just that one interaction — 15-20 seconds max' },
+      { n: '3', text: 'Stop and describe it in one punchy sentence' },
+      { n: '4', text: 'Select "Exciting" tone — Domi voice works great here' },
+      { n: '5', text: 'Post the generated X copy as a hook + video' },
+    ],
+    sfxDefault: 'whoosh-fast',
+  },
+  'tutorial': {
+    icon: '📚',
+    name: 'Tutorial',
+    purpose: 'tutorial',
+    tone: 'technical',
+    speed: '1',
+    duration: 60,
+    tip: '💡 Narrate each step as you go. Slower is better here — users need to follow along.',
+    steps: [
+      { n: '1', text: 'Have your product open and ready at step 1' },
+      { n: '2', text: 'Record yourself doing each step slowly and deliberately' },
+      { n: '3', text: 'Describe all the steps in detail — Claude will write step-by-step VO' },
+      { n: '4', text: 'Use "Technical" tone + "Adam" voice for clear narration' },
+      { n: '5', text: 'Post to YouTube or embed in your docs/help center' },
+    ],
+    sfxDefault: 'ui-click',
+  },
+  'speed-demo': {
+    icon: '🏎️',
+    name: 'Speed Demo',
+    purpose: 'showcase',
+    tone: 'exciting',
+    speed: '2',
+    duration: 20,
+    tip: '💡 Set speed to 2x or 3x. Perfect for TikTok, Reels, and YouTube Shorts.',
+    steps: [
+      { n: '1', text: 'Record your product at normal speed (30–60 seconds)' },
+      { n: '2', text: 'Set Speed to 2x or 3x in the options above' },
+      { n: '3', text: 'Use energetic description — "Watch this go from zero to published in 90 seconds"' },
+      { n: '4', text: 'Pick Domi or Arnold voice for high energy' },
+      { n: '5', text: 'Great for social ads and viral clips' },
+    ],
+    sfxDefault: 'cinematic-boom',
+  },
+  'multi-reel': {
+    icon: '🎞️',
+    name: 'Multi-Clip Reel',
+    purpose: 'showcase',
+    tone: 'professional',
+    speed: '1',
+    duration: 45,
+    tip: '💡 Record 3–5 short clips of different features. They get stitched together with SFX.',
+    steps: [
+      { n: '1', text: 'Go to the Reel tab in the extension' },
+      { n: '2', text: 'Record Clip 1 (one feature, 10-15s), then stop' },
+      { n: '3', text: 'Record Clip 2, Clip 3, etc.' },
+      { n: '4', text: 'Choose SFX transitions from the library' },
+      { n: '5', text: 'Describe the overall reel → Generate → one polished video' },
+    ],
+    sfxDefault: 'swoosh-soft',
+  },
+  'launch-day': {
+    icon: '🎯',
+    name: 'Launch Day',
+    purpose: 'teaser',
+    tone: 'exciting',
+    speed: '1.5',
+    duration: 30,
+    tip: '💡 This is your Product Hunt / social launch video. High energy, punchy, make people want to click.',
+    steps: [
+      { n: '1', text: 'Record your product\'s 3 best moments back to back' },
+      { n: '2', text: 'Set speed to 1.5x for energy without being chaotic' },
+      { n: '3', text: 'Describe it as: "X lets you [do thing] in [time]" — simple and bold' },
+      { n: '4', text: 'Use Domi voice (energetic) with Exciting tone' },
+      { n: '5', text: 'Use the generated X post on launch day — it\'s already written' },
+    ],
+    sfxDefault: 'punch-hit',
+  },
+  'sfx-picker': {
+    icon: '🎵',
+    name: 'SFX Library',
+    tip: '💡 SFX are added between clips during assembly. Generated by ElevenLabs Sound Generation.',
+    steps: [
+      { n: '1', text: 'Browse and click any SFX to preview it' },
+      { n: '2', text: 'Select the one that matches your video\'s energy' },
+      { n: '3', text: 'Whoosh = quick transitions, Cinematic = dramatic reveals' },
+      { n: '4', text: 'UI clicks work great for tutorial/walkthrough videos' },
+      { n: '5', text: 'Click Apply to use your selection when recording' },
+    ],
+  },
+};
+
+// ── State ─────────────────────────────────────────────────────────
+let currentTemplate = 'product-demo';
 let mediaRecorder = null;
 let chunks = [];
 let stream = null;
 let timerInterval = null;
 let seconds = 0;
 let recordingBlob = null;
-let selectedRegion = null;
+let recognition = null;
+let isListening = false;
 let jobId = null;
 
-// ── State management ──────────────────────────────────────────────
 function showState(name) {
   document.querySelectorAll('.state').forEach(s => s.classList.remove('active'));
-  document.getElementById(`state-${name}`).classList.add('active');
+  const el = document.getElementById(`state-${name}`);
+  if (el) el.classList.add('active');
 }
 
 // ── Init ──────────────────────────────────────────────────────────
-document.getElementById('btn-start').addEventListener('click', startRecording);
-document.getElementById('btn-stop').addEventListener('click', stopRecording);
-document.getElementById('btn-generate').addEventListener('click', generate);
-document.getElementById('btn-re-record').addEventListener('click', () => { showState('setup'); });
-document.getElementById('btn-record-again').addEventListener('click', () => { location.reload(); });
-document.getElementById('mic-btn').addEventListener('click', toggleVoiceInput);
+document.addEventListener('DOMContentLoaded', () => {
+  buildSfxLibrary();
+  applyTemplate('product-demo');
 
-// ── Voice input via Web Speech API ───────────────────────────────
-let recognition = null;
-let isListening = false;
+  // Template sidebar
+  document.querySelectorAll('.template-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.template-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      const t = item.dataset.template;
+      currentTemplate = t;
+      if (t === 'sfx-picker') {
+        showState('sfx');
+        updateGuide(t);
+      } else {
+        showState('setup');
+        applyTemplate(t);
+      }
+    });
+  });
 
-function toggleVoiceInput() {
-  if (isListening) {
-    stopVoice();
-    return;
-  }
+  document.getElementById('btn-start').addEventListener('click', startRecording);
+  document.getElementById('btn-stop').addEventListener('click', stopRecording);
+  document.getElementById('btn-generate').addEventListener('click', generate);
+  document.getElementById('btn-re-record').addEventListener('click', () => showState('setup'));
+  document.getElementById('btn-record-again').addEventListener('click', () => location.reload());
+  document.getElementById('mic-btn').addEventListener('click', toggleVoice);
+  document.getElementById('btn-sfx-done').addEventListener('click', () => { showState('setup'); });
+  document.getElementById('btn-goto-dashboard').addEventListener('click', () => window.open('/dashboard', '_blank'));
 
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    document.getElementById('mic-hint').textContent = '⚠️ Voice input not supported in this browser. Please use Chrome.';
-    return;
-  }
+  const params = new URLSearchParams(location.search);
+  if (params.get('template')) applyTemplate(params.get('template'));
+});
 
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-
-  const textarea = document.getElementById('desc-text');
-  const micBtn = document.getElementById('mic-btn');
-  const hint = document.getElementById('mic-hint');
-  let baseText = textarea.value;
-
-  recognition.onstart = () => {
-    isListening = true;
-    micBtn.textContent = '⏹';
-    micBtn.classList.add('listening');
-    hint.textContent = '🔴 Listening... speak now. Tap ⏹ to stop.';
-    hint.classList.add('active');
-  };
-
-  recognition.onresult = (e) => {
-    let interim = '';
-    let final = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) final += t + ' ';
-      else interim += t;
-    }
-    baseText += final;
-    textarea.value = baseText + interim;
-  };
-
-  recognition.onend = () => stopVoice();
-  recognition.onerror = (e) => {
-    hint.textContent = '⚠️ Voice error: ' + e.error + '. Try again.';
-    stopVoice();
-  };
-
-  recognition.start();
+function applyTemplate(id) {
+  const t = TEMPLATES[id];
+  if (!t) return;
+  updateGuide(id);
+  document.getElementById('setup-title').textContent = `${t.icon} ${t.name} — Ready to record`;
+  if (t.purpose) document.getElementById('desc-purpose').value = t.purpose;
+  if (t.tone) document.getElementById('desc-tone').value = t.tone;
+  if (t.speed) document.getElementById('opt-speed').value = t.speed;
+  document.getElementById('setup-tip').textContent = t.tip || '';
 }
 
-function stopVoice() {
-  isListening = false;
-  const micBtn = document.getElementById('mic-btn');
-  const hint = document.getElementById('mic-hint');
-  micBtn.textContent = '🎙️';
-  micBtn.classList.remove('listening');
-  hint.textContent = '🎙️ Tap the mic and describe it out loud — or type below';
-  hint.classList.remove('active');
-  recognition?.stop();
+function updateGuide(id) {
+  const t = TEMPLATES[id];
+  if (!t) return;
+  const guide = document.getElementById('template-guide');
+  guide.innerHTML = `
+    <div class="guide-title">${t.icon} ${t.name} — How to record this</div>
+    <ul class="guide-steps">
+      ${(t.steps||[]).map((s,i) => `<li data-n="${s.n}">${s.text}</li>`).join('')}
+    </ul>
+    ${t.tip ? `<div class="guide-tip">${t.tip}</div>` : ''}
+  `;
 }
 
-// Parse URL params (passed from extension)
-const params = new URLSearchParams(location.search);
-if (params.get('voice')) document.getElementById('desc-voice').value = params.get('voice');
-if (params.get('tone')) document.getElementById('desc-tone').value = params.get('tone');
-if (params.get('purpose')) document.getElementById('desc-purpose').value = params.get('purpose');
+// ── SFX Library ───────────────────────────────────────────────────
+function buildSfxLibrary() {
+  const sections = { transitions: 'sfx-transitions', impacts: 'sfx-impacts', ui: 'sfx-ui', none: 'sfx-none-grid' };
+  Object.entries(sections).forEach(([key, elId]) => {
+    const grid = document.getElementById(elId);
+    if (!grid) return;
+    grid.innerHTML = SFX_LIBRARY[key].map(sfx => `
+      <div class="sfx-item ${sfx.id === 'none' ? 'sfx-none' : ''}" data-sfx="${sfx.id}">
+        <div class="sfx-icon">${sfx.icon}</div>
+        <div class="sfx-name">${sfx.name}</div>
+        <div class="sfx-mood">${sfx.mood}</div>
+        <div class="sfx-play">▶ Preview</div>
+      </div>`).join('');
+    grid.querySelectorAll('.sfx-item').forEach(item => {
+      item.addEventListener('click', () => selectSfx(item.dataset.sfx, item));
+    });
+  });
+}
 
-// Region select removed — Chrome's native screen picker handles tab/window/region selection
+function selectSfx(id, el) {
+  document.querySelectorAll('.sfx-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedSfx = id;
+  const allSfx = Object.values(SFX_LIBRARY).flat();
+  const found = allSfx.find(s => s.id === id);
+  document.getElementById('sfx-selected-label').textContent = found ? `${found.icon} ${found.name}` : 'None';
+}
 
 // ── Recording ─────────────────────────────────────────────────────
 async function startRecording() {
   const warnEl = document.getElementById('setup-warn');
   warnEl.style.display = 'none';
-
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { cursor: 'always', frameRate: 30 },
-      audio: false,
-    });
-
-    // Show preview
-    const video = document.getElementById('preview-video');
-    video.srcObject = stream;
-
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always', frameRate: 30 }, audio: false });
+    document.getElementById('preview-video').srcObject = stream;
     chunks = [];
-    const mimeType = getSupportedMime();
+    const mimeType = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
     mediaRecorder = new MediaRecorder(stream, { mimeType });
     mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = onStop;
     stream.getVideoTracks()[0].addEventListener('ended', stopRecording);
-
-    // Start timer
     seconds = 0;
-    updateTimer();
-    timerInterval = setInterval(updateTimer, 1000);
-
+    timerInterval = setInterval(() => {
+      seconds++;
+      const m = Math.floor(seconds/60), s = seconds%60;
+      document.getElementById('timer-display').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+    }, 1000);
     mediaRecorder.start(500);
     showState('recording');
-
   } catch (err) {
-    warnEl.textContent = err.name === 'NotAllowedError'
-      ? '⚠️ Screen recording permission denied. Please allow screen capture and try again.'
-      : '⚠️ ' + err.message;
+    warnEl.textContent = err.name === 'NotAllowedError' ? '⚠️ Screen permission denied. Please allow screen capture.' : '⚠️ ' + err.message;
     warnEl.style.display = 'block';
   }
-}
-
-function updateTimer() {
-  seconds++;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  document.getElementById('timer-display').textContent = `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function stopRecording() {
@@ -396,8 +664,28 @@ function stopRecording() {
 }
 
 function onStop() {
-  recordingBlob = new Blob(chunks, { type: getSupportedMime() });
+  recordingBlob = new Blob(chunks, { type: 'video/webm' });
   showState('describe');
+}
+
+// ── Voice Input ───────────────────────────────────────────────────
+function toggleVoice() {
+  if (isListening) { recognition?.stop(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { document.getElementById('mic-hint').textContent = '⚠️ Voice not supported — use Chrome'; return; }
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  const ta = document.getElementById('desc-text');
+  const btn = document.getElementById('mic-btn');
+  const hint = document.getElementById('mic-hint');
+  let base = ta.value;
+  recognition.onstart = () => { isListening = true; btn.textContent = '⏹'; btn.classList.add('listening'); hint.textContent = '🔴 Listening... speak now'; hint.classList.add('active'); };
+  recognition.onresult = e => { let f='',i=''; for (let x=e.resultIndex;x<e.results.length;x++) { const t=e.results[x][0].transcript; e.results[x].isFinal ? f+=t+' ' : i+=t; } base+=f; ta.value=base+i; };
+  recognition.onend = () => { isListening=false; btn.textContent='🎙️'; btn.classList.remove('listening'); hint.textContent='🎙️ Tap the mic and speak'; hint.classList.remove('active'); };
+  recognition.onerror = e => { recognition.stop(); hint.textContent='⚠️ Error: '+e.error; };
+  recognition.start();
 }
 
 // ── Generate ──────────────────────────────────────────────────────
@@ -405,94 +693,65 @@ async function generate() {
   const desc = document.getElementById('desc-text').value.trim();
   const warnEl = document.getElementById('desc-warn');
   warnEl.style.display = 'none';
-
-  if (!desc) {
-    warnEl.textContent = '⚠️ Please describe what you recorded.';
-    warnEl.style.display = 'block';
-    return;
-  }
-  if (!recordingBlob) {
-    warnEl.textContent = '⚠️ No recording found. Please re-record.';
-    warnEl.style.display = 'block';
-    return;
-  }
+  if (!desc) { warnEl.textContent='⚠️ Please describe what you recorded.'; warnEl.style.display='block'; return; }
+  if (!recordingBlob) { warnEl.textContent='⚠️ No recording. Re-record first.'; warnEl.style.display='block'; return; }
 
   showState('uploading');
-  animateUploadProgress();
+  let pct = 10;
+  const bar = document.getElementById('upload-progress');
+  const lbl = document.getElementById('upload-lbl');
+  const iv = setInterval(() => { pct = Math.min(pct+7,88); bar.style.width=pct+'%'; if(pct>30)lbl.textContent='Starting pipeline...'; if(pct>60)lbl.textContent='Almost there...'; if(pct>=88)clearInterval(iv); }, 400);
 
   const fd = new FormData();
   fd.append('recording', recordingBlob, 'recording.webm');
   fd.append('description', desc);
-  fd.append('title', document.getElementById('desc-title').value.trim() || desc.slice(0, 50));
+  fd.append('title', document.getElementById('desc-title').value.trim() || desc.slice(0,50));
   fd.append('purpose', document.getElementById('desc-purpose').value);
   fd.append('tone', document.getElementById('desc-tone').value);
   fd.append('voice', document.getElementById('desc-voice').value);
+  fd.append('speed', document.getElementById('opt-speed').value);
   fd.append('blurCredentials', document.getElementById('opt-blur').checked);
   fd.append('autoZoom', document.getElementById('opt-zoom').checked);
   fd.append('webcam', document.getElementById('opt-webcam').checked);
-  if (selectedRegion) fd.append('region', JSON.stringify(selectedRegion));
+  if (selectedSfx !== 'none') fd.append('sfx', selectedSfx);
 
   try {
-    const res = await fetch(`${SERVER}/api/upload-recording`, { method: 'POST', body: fd });
+    const res = await fetch(`${SERVER}/api/upload-recording`, { method:'POST', body:fd });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    clearInterval(iv); bar.style.width='100%';
     jobId = data.id;
-
     document.getElementById('dashboard-link').href = `${SERVER}/dashboard?job=${jobId}`;
     showState('success');
-    pollPipelineStatus(jobId);
-
+    pollPipeline(jobId);
   } catch (err) {
+    clearInterval(iv);
     showState('describe');
-    document.getElementById('desc-warn').textContent = '❌ Upload failed: ' + err.message;
-    document.getElementById('desc-warn').style.display = 'block';
+    document.getElementById('desc-warn').textContent='❌ '+err.message;
+    document.getElementById('desc-warn').style.display='block';
   }
 }
 
-function animateUploadProgress() {
-  let pct = 10;
-  const bar = document.getElementById('upload-progress');
-  const lbl = document.getElementById('upload-label');
-  const steps = ['Uploading recording...', 'Processing...', 'Starting pipeline...'];
-  let step = 0;
-  const iv = setInterval(() => {
-    pct = Math.min(pct + 8, 90);
-    bar.style.width = pct + '%';
-    if (pct > 30 && step === 0) { lbl.textContent = steps[1]; step++; }
-    if (pct > 70 && step === 1) { lbl.textContent = steps[2]; step++; }
-    if (pct >= 90) clearInterval(iv);
-  }, 400);
-}
-
-function pollPipelineStatus(id) {
+function pollPipeline(id) {
   const bar = document.getElementById('pipeline-progress');
-  const lbl = document.getElementById('pipeline-label');
+  const lbl = document.getElementById('pipeline-lbl');
+  const stepMap = { script: 'ps-script', voice: 'ps-voice', render: 'ps-render', done: 'ps-done' };
   let attempts = 0;
-
   const iv = setInterval(async () => {
-    attempts++;
-    if (attempts > 120) { clearInterval(iv); return; }
+    if (++attempts > 120) { clearInterval(iv); return; }
     try {
       const r = await fetch(`${SERVER}/api/status/${id}`);
       const d = await r.json();
-      const pct = d.progress || d.progressPercent || 10;
-      bar.style.width = Math.min(pct, 99) + '%';
+      const pct = d.progress || d.progressPercent || 5;
+      bar.style.width = Math.min(pct,99)+'%';
       lbl.textContent = d.progressMessage || d.progress || 'Processing...';
-      if (d.status === 'completed') {
-        clearInterval(iv);
-        bar.style.width = '100%';
-        lbl.textContent = '✅ Done! Video ready.';
-      }
-      if (d.status === 'failed') {
-        clearInterval(iv);
-        lbl.textContent = '❌ ' + (d.error || 'Pipeline failed');
-      }
+      // Update step indicators
+      if (pct >= 40) { document.getElementById('ps-script').className='ps done'; document.getElementById('ps-voice').className='ps active'; }
+      if (pct >= 65) { document.getElementById('ps-voice').className='ps done'; document.getElementById('ps-render').className='ps active'; }
+      if (d.status === 'completed') { clearInterval(iv); bar.style.width='100%'; lbl.textContent='✅ Video ready!'; document.getElementById('ps-render').className='ps done'; document.getElementById('ps-done').className='ps done'; }
+      if (d.status === 'failed') { clearInterval(iv); lbl.textContent='❌ '+(d.error||'Failed'); }
     } catch {}
   }, 3000);
-}
-
-function getSupportedMime() {
-  return ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
 }
 </script>
 </body>
