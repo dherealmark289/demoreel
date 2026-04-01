@@ -30,6 +30,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (cfg.autoOpen !== undefined) document.getElementById('cfg-autoopen').checked = cfg.autoOpen;
   if (cfg.autoRefresh !== undefined) document.getElementById('cfg-autorefresh').checked = cfg.autoRefresh !== false;
 
+  // Check server connectivity and update banner
+  checkConnection();
+
   // Settings listeners
   document.getElementById('cfg-server').addEventListener('change', e => {
     serverUrl = (e.target.value.trim() || DEFAULT_SERVER).replace(/\/$/, '');
@@ -466,6 +469,46 @@ async function generateReel() {
 
 function clearAll() {
   if (confirm('Clear all DemoReel extension data?')) { chrome.storage.local.clear(); location.reload(); }
+}
+
+// ── Dashboard Connection ──────────────────────────────────────────
+function openDashboard() {
+  chrome.tabs.create({ url: `${serverUrl}/dashboard` });
+}
+
+async function checkConnection() {
+  const banner = document.getElementById('dashboard-banner');
+  try {
+    const res = await fetch(`${serverUrl}/health`, { signal: AbortSignal.timeout(5000) });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      // Connected — show green with DB/R2 status
+      const dbOk = data.storage?.db;
+      const r2Ok = data.storage?.r2;
+      banner.style.background = 'rgba(22,163,74,0.1)';
+      banner.style.borderBottomColor = 'rgba(22,163,74,0.25)';
+      banner.innerHTML = `
+        <div style="display:flex;align-items:center;gap:6px;font-size:0.72rem;">
+          <span style="width:7px;height:7px;background:#16a34a;border-radius:50%;display:inline-block;box-shadow:0 0 6px #16a34a;flex-shrink:0;"></span>
+          <span style="color:#86efac;font-weight:600;">Connected</span>
+          <span style="color:#8b949e;">· DB ${dbOk ? '✅' : '⚠️'} · R2 ${r2Ok ? '✅' : '⚠️'}</span>
+        </div>
+        <button onclick="openDashboard()" style="padding:5px 12px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:6px;color:#fff;font-size:0.72rem;font-weight:700;cursor:pointer;white-space:nowrap;">📊 Dashboard →</button>
+      `;
+    }
+  } catch {
+    // Offline / wrong URL
+    banner.style.background = 'rgba(220,38,38,0.1)';
+    banner.style.borderBottomColor = 'rgba(220,38,38,0.25)';
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.72rem;">
+        <span style="width:7px;height:7px;background:#dc2626;border-radius:50%;display:inline-block;flex-shrink:0;"></span>
+        <span style="color:#fca5a5;font-weight:600;">Not connected</span>
+        <span style="color:#8b949e;">· Check Settings</span>
+      </div>
+      <button onclick="switchNav('settings')" style="padding:5px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:0.72rem;font-weight:700;cursor:pointer;">⚙️ Fix →</button>
+    `;
+  }
 }
 
 function getSupportedMime() {

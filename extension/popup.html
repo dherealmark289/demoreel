@@ -190,6 +190,24 @@
 </div>
 
 <!-- Nav -->
+<!-- Dashboard Connect Banner -->
+<div id="dashboard-banner" style="
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 12px; background:rgba(37,99,235,0.12);
+  border-bottom:1px solid rgba(37,99,235,0.25);
+  font-size:0.75rem;
+">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="width:7px;height:7px;background:#16a34a;border-radius:50%;display:inline-block;box-shadow:0 0 6px #16a34a;"></span>
+    <span style="color:#93c5fd;font-weight:600;">Connected to DemoReel</span>
+  </div>
+  <button onclick="openDashboard()" style="
+    padding:5px 12px; background:linear-gradient(135deg,#2563eb,#7c3aed);
+    border:none; border-radius:6px; color:#fff; font-size:0.72rem;
+    font-weight:700; cursor:pointer; white-space:nowrap;
+  ">📊 Open Dashboard →</button>
+</div>
+
 <div class="nav">
   <div class="nav-btn active" id="nav-projects" onclick="switchNav('projects')">📁 Projects</div>
   <div class="nav-btn" id="nav-wizard" onclick="switchNav('wizard')">✨ New Demo</div>
@@ -448,6 +466,9 @@
 <!-- ══════════════════════════════════════════════ -->
 <div class="panel" id="panel-settings">
   <div style="padding:14px;">
+    <button onclick="openDashboard()" style="width:100%;padding:11px;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;border-radius:8px;color:#fff;font-size:0.88rem;font-weight:700;cursor:pointer;margin-bottom:14px;">
+      📊 Open Dashboard
+    </button>
     <span class="lbl">DemoReel Server URL</span>
     <input type="url" id="cfg-server" value="https://demoreel-production.up.railway.app" />
 
