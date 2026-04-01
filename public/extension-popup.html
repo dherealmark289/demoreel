@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DemoReel Extension</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #1c2431; --bg4: #21262d;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --accent: #2563eb; --grad: linear-gradient(135deg, #2563eb, #7c3aed);
+      --green: #16a34a; --red: #dc2626;
+    }
+    html, body { width: 400px; height: 600px; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+
+    .header { background: var(--grad); padding: 12px 14px 10px; display: flex; align-items: center; justify-content: space-between; }
+    .header-left { display: flex; align-items: center; gap: 8px; }
+    .header-icon { font-size: 20px; }
+    .header-title { font-size: 0.9rem; font-weight: 700; }
+    .header-sub { font-size: 0.62rem; opacity: 0.8; }
+    .header-right { display: flex; align-items: center; gap: 6px; }
+    .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: #fbbf24; flex-shrink: 0; transition: background 0.3s; }
+    .conn-dot.ok { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+    .conn-dot.err { background: var(--red); }
+    .conn-label { font-size: 0.68rem; opacity: 0.9; }
+
+    .nav { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); }
+    .nav-btn { flex: 1; padding: 9px 4px; text-align: center; font-size: 0.68rem; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; user-select: none; }
+    .nav-btn.active { color: #60a5fa; border-bottom-color: var(--accent); background: rgba(37,99,235,0.06); }
+    .nav-btn:hover:not(.active) { color: var(--text); background: rgba(255,255,255,0.03); }
+
+    .panel { display: none; height: calc(600px - 83px); overflow-y: auto; }
+    .panel.active { display: block; }
+    .panel::-webkit-scrollbar { width: 4px; }
+    .panel::-webkit-scrollbar-track { background: transparent; }
+    .panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Projects ── */
+    .p-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px; }
+    .p-header-title { font-size: 0.82rem; font-weight: 700; }
+    .btn-xs { padding: 4px 10px; background: none; border: 1px solid var(--border); border-radius: 6px; font-size: 0.68rem; color: var(--muted); cursor: pointer; }
+    .btn-xs:hover { color: var(--text); border-color: var(--accent); }
+    .btn-dashboard { padding: 4px 10px; background: var(--grad); border: none; border-radius: 6px; font-size: 0.68rem; font-weight: 700; color: #fff; cursor: pointer; }
+
+    .project-card { margin: 0 10px 7px; background: var(--bg2); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; cursor: pointer; transition: border-color 0.15s; }
+    .project-card:hover { border-color: var(--accent); }
+    .project-thumb { width: 100%; height: 65px; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 1.6rem; position: relative; overflow: hidden; }
+    .project-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .p-badge { position: absolute; top: 4px; right: 4px; padding: 2px 7px; border-radius: 8px; font-size: 0.58rem; font-weight: 700; text-transform: uppercase; }
+    .st-completed { background: rgba(22,163,74,0.9); color: #fff; }
+    .st-processing, .st-queued { background: rgba(37,99,235,0.9); color: #fff; animation: bp 2s infinite; }
+    .st-failed { background: rgba(220,38,38,0.85); color: #fff; }
+    @keyframes bp { 0%,100%{opacity:1} 50%{opacity:0.6} }
+    .p-prog { height: 3px; background: var(--bg3); }
+    .p-prog-bar { height: 100%; background: var(--grad); transition: width 0.5s; }
+    .p-body { padding: 8px 10px; }
+    .p-name { font-size: 0.78rem; font-weight: 600; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .p-meta { font-size: 0.63rem; color: var(--muted); display: flex; gap: 7px; margin-bottom: 7px; flex-wrap: wrap; }
+    .p-actions { display: flex; gap: 5px; }
+    .pa { flex: 1; padding: 5px 6px; border: none; border-radius: 5px; font-size: 0.67rem; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; display: block; }
+    .pa-dl { background: var(--green); color: #fff; }
+    .pa-open { background: var(--accent); color: #fff; }
+    .pa-dim { background: var(--bg4); color: var(--muted); cursor: default; pointer-events: none; }
+    .empty-state { text-align: center; padding: 32px 14px; color: var(--muted); font-size: 0.78rem; }
+
+    /* ── Wizard ── */
+    .wizard-wrap { padding: 12px; }
+    .wsteps { display: flex; margin-bottom: 14px; }
+    .ws { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; }
+    .ws:not(:last-child)::after { content: ''; position: absolute; top: 11px; left: 60%; right: -40%; height: 2px; background: var(--border); z-index: 0; }
+    .ws.done:not(:last-child)::after { background: var(--accent); }
+    .ws-dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg2); display: flex; align-items: center; justify-content: center; font-size: 0.62rem; font-weight: 700; color: var(--muted); position: relative; z-index: 1; transition: all 0.2s; }
+    .ws.active .ws-dot { background: var(--grad); border-color: transparent; color: #fff; }
+    .ws.done .ws-dot { background: var(--green); border-color: transparent; color: #fff; }
+    .ws-label { font-size: 0.55rem; color: var(--muted); margin-top: 3px; }
+    .ws.active .ws-label { color: #93c5fd; }
+
+    .step { display: none; }
+    .step.active { display: block; }
+    .step-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 2px; }
+    .step-sub { font-size: 0.7rem; color: var(--muted); margin-bottom: 10px; }
+
+    .lbl { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin: 7px 0 4px; display: block; }
+    select, textarea, input[type=text] { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 7px 9px; font-size: 0.8rem; outline: none; font-family: inherit; margin-bottom: 8px; }
+    select:focus, textarea:focus, input:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 58px; }
+
+    .trow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+    .trow-label { font-size: 0.8rem; flex: 1; }
+    .trow-label small { display: block; font-size: 0.63rem; color: var(--muted); }
+    .tog { position: relative; width: 34px; height: 19px; flex-shrink: 0; }
+    .tog input { opacity: 0; width: 0; height: 0; }
+    .ts { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: .2s; }
+    .ts::before { content: ''; position: absolute; width: 13px; height: 13px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    input:checked + .ts { background: var(--accent); }
+    input:checked + .ts::before { transform: translateX(15px); }
+
+    .speed-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .speed-row input[type=range] { flex: 1; accent-color: var(--accent); }
+    .speed-val { font-size: 0.8rem; font-weight: 700; min-width: 32px; text-align: right; }
+
+    .rec-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 8px; }
+    .rec-zone.active { border-color: var(--red); background: rgba(220,38,38,0.05); }
+    .rz-icon { font-size: 1.8rem; margin-bottom: 4px; }
+    .rz-label { font-size: 0.8rem; font-weight: 600; }
+    .rz-sub { font-size: 0.67rem; color: var(--muted); margin-top: 2px; }
+
+    .status-bar { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; margin-bottom: 9px; font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+    .sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+    .sdot.ready { background: var(--green); }
+    .sdot.recording { background: var(--red); animation: rpulse 1s infinite; }
+    @keyframes rpulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .btn { width: 100%; padding: 9px; border: none; border-radius: 7px; font-size: 0.83rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; margin-bottom: 6px; }
+    .btn:hover { opacity: 0.88; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--grad); color: #fff; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-ghost { background: var(--bg4); color: var(--text); border: 1px solid var(--border); }
+    .btn-row { display: flex; gap: 7px; margin-bottom: 6px; }
+    .btn-row .btn { margin-bottom: 0; }
+
+    .info { background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.2); border-radius: 6px; padding: 9px 11px; font-size: 0.72rem; color: #93c5fd; margin-bottom: 9px; line-height: 1.5; }
+    .warn { background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); border-radius: 6px; padding: 7px 9px; font-size: 0.72rem; color: #fca5a5; margin-bottom: 7px; }
+    .success-box { background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.3); border-radius: 7px; padding: 11px; font-size: 0.8rem; margin-top: 8px; }
+    .success-box a { color: #86efac; }
+    .divider { height: 1px; background: var(--border); margin: 8px 0; }
+    .hidden { display: none !important; }
+
+    .upload-label { display: block; width: 100%; padding: 9px; background: var(--bg4); border: 1px solid var(--border); border-radius: 7px; font-size: 0.83rem; font-weight: 600; cursor: pointer; text-align: center; color: var(--text); margin-bottom: 6px; }
+    .upload-label:hover { border-color: var(--accent); }
+    .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.74rem; background: var(--bg2); border: 1px solid var(--border); border-radius: 7px; padding: 10px; margin-bottom: 10px; }
+    .summary-grid span { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <span class="header-icon">🎬</span>
+    <div>
+      <div class="header-title">DemoReel Pro</div>
+      <div class="header-sub">Record · Edit · Ship</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="conn-dot" id="conn-dot"></div>
+    <span class="conn-label" id="conn-label">...</span>
+  </div>
+</div>
+
+<!-- Nav -->
+<div class="nav">
+  <div class="nav-btn active" id="nav-projects">📁 Projects</div>
+  <div class="nav-btn" id="nav-wizard">✨ New Demo</div>
+  <div class="nav-btn" id="nav-reel">🎞 Reel</div>
+  <div class="nav-btn" id="nav-settings">⚙️</div>
+</div>
+
+<!-- PROJECTS -->
+<div class="panel active" id="panel-projects">
+  <div class="p-header">
+    <div class="p-header-title">📁 Projects</div>
+    <div style="display:flex;gap:5px;">
+      <button class="btn-xs" id="btn-refresh">↻</button>
+      <button class="btn-dashboard" id="btn-open-dashboard">📊 Dashboard →</button>
+    </div>
+  </div>
+  <div id="project-list"><div class="empty-state">Loading...</div></div>
+</div>
+
+<!-- WIZARD -->
+<div class="panel" id="panel-wizard">
+  <div class="wizard-wrap">
+    <div class="wsteps">
+      <div class="ws active" id="ws-1"><div class="ws-dot">1</div><div class="ws-label">Record</div></div>
+      <div class="ws" id="ws-2"><div class="ws-dot">2</div><div class="ws-label">Options</div></div>
+      <div class="ws" id="ws-3"><div class="ws-dot">3</div><div class="ws-label">Script</div></div>
+      <div class="ws" id="ws-4"><div class="ws-dot">4</div><div class="ws-label">Generate</div></div>
+    </div>
+
+    <!-- Step 1 -->
+    <div class="step active" id="step-1">
+      <div class="step-title">🎥 Capture Screen</div>
+      <div class="step-sub">Record your screen or upload a clip.</div>
+      <div class="status-bar"><div class="sdot ready" id="rec-dot"></div><span id="rec-status">Ready</span></div>
+      <div class="trow"><div class="trow-label">🟦 Select region <small>Crop area</small></div><label class="tog"><input type="checkbox" id="opt-region"><span class="ts"></span></label></div>
+      <div class="trow"><div class="trow-label">📹 Webcam overlay</div><label class="tog"><input type="checkbox" id="opt-webcam"><span class="ts"></span></label></div>
+      <div id="rec-idle">
+        <button class="btn btn-primary" id="rec-start">⏺ Start Recording</button>
+        <label class="upload-label">📂 Upload Video<input type="file" id="upload-file" accept="video/*" style="display:none"></label>
+      </div>
+      <div class="hidden" id="rec-recording">
+        <div class="rec-zone active"><div class="rz-icon">🔴</div><div class="rz-label">Recording...</div><div class="rz-sub" id="rec-timer">0:00</div></div>
+        <button class="btn btn-danger" id="rec-stop">⏹ Stop</button>
+      </div>
+      <div class="hidden" id="rec-done">
+        <div class="info">✅ Captured: <strong id="rec-size-label"></strong></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-s1-next">Options →</button>
+          <button class="btn btn-ghost" id="btn-discard">🗑 Discard</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step" id="step-2">
+      <div class="step-title">⚙️ Enhance Options</div>
+      <div class="step-sub">Effects and processing settings.</div>
+      <span class="lbl">Speed</span>
+      <div class="speed-row"><input type="range" id="opt-speed" min="1" max="3" step="0.5" value="1"><div class="speed-val"><span id="speed-display">1.0</span>x</div></div>
+      <div class="trow"><div class="trow-label">🔐 Auto-blur credentials <small>API keys, passwords</small></div><label class="tog"><input type="checkbox" id="opt-blur" checked><span class="ts"></span></label></div>
+      <div class="trow"><div class="trow-label">⚡ Auto-zoom on clicks</div><label class="tog"><input type="checkbox" id="opt-zoom" checked><span class="ts"></span></label></div>
+      <div class="trow"><div class="trow-label">📝 Chapter overlays</div><label class="tog"><input type="checkbox" id="opt-chapters"><span class="ts"></span></label></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btn-s2-back">← Back</button>
+        <button class="btn btn-primary" id="btn-s2-next">Script →</button>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step" id="step-3">
+      <div class="step-title">✍️ Script & Voice</div>
+      <div class="step-sub">Describe the feature — Claude writes the script.</div>
+      <span class="lbl">Feature title</span>
+      <input type="text" id="proj-title" placeholder="e.g. Drag & Drop Upload">
+      <span class="lbl">What are you showing? *</span>
+      <textarea id="proj-desc" placeholder="Describe the feature and what steps you recorded..."></textarea>
+      <span class="lbl">Purpose</span>
+      <select id="proj-purpose"><option value="product-demo">Product Demo</option><option value="showcase">Feature Showcase</option><option value="tutorial">Tutorial</option><option value="teaser">Teaser</option></select>
+      <span class="lbl">Tone & Voice</span>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
+        <select id="proj-tone"><option value="professional">Professional</option><option value="casual">Casual</option><option value="exciting">Exciting</option></select>
+        <select id="proj-voice"><option value="alloy">Rachel ♀</option><option value="echo">Domi ♀</option><option value="fable">Bella ♀</option><option value="onyx">Arnold ♂</option><option value="nova">Adam ♂</option></select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btn-s3-back">← Back</button>
+        <button class="btn btn-primary" id="btn-s3-next">Review →</button>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step" id="step-4">
+      <div class="step-title">🚀 Generate Demo</div>
+      <div id="s4-summary" class="summary-grid"></div>
+      <div class="hidden warn" id="gen-warn"></div>
+      <button class="btn btn-primary" id="btn-generate">🚀 Generate Demo Video</button>
+      <button class="btn btn-ghost" id="btn-s4-back">← Back</button>
+      <div class="hidden success-box" id="gen-success">
+        <div style="font-weight:600;margin-bottom:5px;">✅ Pipeline started!</div>
+        <a id="gen-link" href="#" target="_blank">👉 Open in Dashboard →</a>
+        <div style="font-size:0.67rem;color:#8b949e;margin-top:3px;" id="gen-jobid"></div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn btn-primary" id="btn-go-projects" style="font-size:0.75rem;padding:6px;margin-bottom:0;">📁 Projects</button>
+          <button class="btn btn-ghost" id="btn-new-demo" style="font-size:0.75rem;padding:6px;margin-bottom:0;">+ New</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REEL -->
+<div class="panel" id="panel-reel">
+  <div style="padding:12px;">
+    <div class="info">🎞 Record multiple clips → assemble into a teaser reel with SFX + voiceover.</div>
+    <div style="display:flex;gap:6px;margin-bottom:9px;">
+      <button class="btn btn-primary" id="reel-rec" style="flex:1;font-size:0.78rem;padding:8px;margin-bottom:0;">⏺ Record Clip</button>
+      <label class="btn btn-ghost" style="flex:1;font-size:0.78rem;padding:8px;margin-bottom:0;cursor:pointer;text-align:center;">
+        📂 Upload<input type="file" id="reel-file" accept="video/*" multiple style="display:none">
+      </label>
+    </div>
+    <div id="reel-clips" style="min-height:30px;margin-bottom:9px;"></div>
+    <span class="lbl">Description *</span>
+    <textarea id="reel-desc" placeholder="What's this reel about?"></textarea>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">
+      <div><span class="lbl">SFX</span><select id="reel-sfx"><option value="whoosh">Whoosh</option><option value="cinematic">Cinematic</option><option value="tech">Tech clicks</option><option value="none">None</option></select></div>
+      <div><span class="lbl">Voice</span><select id="reel-voice"><option value="alloy">Rachel</option><option value="echo">Domi</option><option value="onyx">Arnold</option></select></div>
+    </div>
+    <span class="lbl">Speed</span>
+    <div class="speed-row"><input type="range" id="reel-speed" min="1" max="3" step="0.5" value="1"><div class="speed-val"><span id="reel-speed-val">1.0</span>x</div></div>
+    <div class="hidden warn" id="reel-warn"></div>
+    <button class="btn btn-primary" id="reel-generate">🚀 Generate Reel</button>
+    <div class="hidden success-box" id="reel-success">
+      ✅ Reel started! <a id="reel-link" href="#" target="_blank">👉 Open Dashboard →</a>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="panel" id="panel-settings">
+  <div style="padding:12px;">
+    <button class="btn btn-primary" id="settings-dashboard">📊 Open Dashboard</button>
+    <span class="lbl">Server URL</span>
+    <input type="text" id="cfg-server" value="https://demoreel-production.up.railway.app">
+    <div class="trow"><div class="trow-label">Auto-open job tab</div><label class="tog"><input type="checkbox" id="cfg-autoopen" checked><span class="ts"></span></label></div>
+    <div class="divider"></div>
+    <div class="info">🔜 Face-to-speech (HeyGen) coming soon.</div>
+    <button class="btn btn-ghost" id="btn-clear">🗑 Clear All Data</button>
+  </div>
+</div>
+
+<script>
+// Extension popup hosted on server — UI updates without reinstall
+// Recording happens via postMessage to parent extension shell
+
+const PARENT = window.parent !== window ? window.parent : null;
+const serverUrl = location.origin; // same as Railway server
+
+function post(type, data = {}) {
+  if (PARENT) PARENT.postMessage({ type, data }, '*');
+}
+function openTab(url) { post('OPEN_TAB', { url }); }
+function getStorage(keys) { return new Promise(r => { post('GET_STORAGE', { keys }); window.addEventListener('message', function h(e) { if (e.data?.type === 'STORAGE_RESULT') { window.removeEventListener('message', h); r(e.data.data); } }); }); }
+function setStorage(obj) { post('SET_STORAGE', obj); }
+function fmt(b) { return b > 1048576 ? (b/1048576).toFixed(1)+' MB' : Math.round(b/1024)+' KB'; }
+
+let recordingSize = 0;
+let recordingReady = false;
+let reelClips = [];
+
+// ── Init ──────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  const cfg = await getStorage(['serverUrl', 'autoOpen']);
+  if (cfg.serverUrl) document.getElementById('cfg-server').value = cfg.serverUrl;
+  if (cfg.autoOpen !== undefined) document.getElementById('cfg-autoopen').checked = cfg.autoOpen;
+
+  checkHealth();
+  loadProjects();
+  setInterval(loadProjects, 15000);
+
+  // Nav
+  ['projects','wizard','reel','settings'].forEach(n => {
+    document.getElementById(`nav-${n}`).addEventListener('click', () => switchNav(n));
+  });
+
+  // Dashboard buttons
+  document.getElementById('btn-open-dashboard').addEventListener('click', () => openTab(`${serverUrl}/dashboard`));
+  document.getElementById('btn-refresh').addEventListener('click', () => loadProjects());
+  document.getElementById('settings-dashboard').addEventListener('click', () => openTab(`${serverUrl}/dashboard`));
+
+  // Settings
+  document.getElementById('cfg-server').addEventListener('change', e => setStorage({ serverUrl: e.target.value.trim() }));
+  document.getElementById('cfg-autoopen').addEventListener('change', e => setStorage({ autoOpen: e.target.checked }));
+  document.getElementById('btn-clear').addEventListener('click', () => { if (confirm('Clear all data?')) { post('SET_STORAGE', {}); location.reload(); } });
+
+  // Wizard
+  document.getElementById('rec-start').addEventListener('click', () => { post('START_RECORDING', {}); });
+  document.getElementById('rec-stop').addEventListener('click', () => post('STOP_RECORDING'));
+  document.getElementById('upload-file').addEventListener('change', handleUpload);
+  document.getElementById('btn-discard').addEventListener('click', discardRecording);
+  document.getElementById('btn-s1-next').addEventListener('click', () => goStep(2));
+  document.getElementById('btn-s2-back').addEventListener('click', () => goStep(1));
+  document.getElementById('btn-s2-next').addEventListener('click', () => goStep(3));
+  document.getElementById('btn-s3-back').addEventListener('click', () => goStep(2));
+  document.getElementById('btn-s3-next').addEventListener('click', () => goStep(4));
+  document.getElementById('btn-s4-back').addEventListener('click', () => goStep(3));
+  document.getElementById('btn-generate').addEventListener('click', generateDemo);
+  document.getElementById('btn-go-projects').addEventListener('click', () => switchNav('projects'));
+  document.getElementById('btn-new-demo').addEventListener('click', startOver);
+  document.getElementById('opt-speed').addEventListener('input', e => document.getElementById('speed-display').textContent = parseFloat(e.target.value).toFixed(1));
+
+  // Reel
+  document.getElementById('reel-rec').addEventListener('click', () => post('START_RECORDING', { reelMode: true }));
+  document.getElementById('reel-file').addEventListener('change', reelAddFiles);
+  document.getElementById('reel-generate').addEventListener('click', generateReel);
+  document.getElementById('reel-speed').addEventListener('input', e => document.getElementById('reel-speed-val').textContent = parseFloat(e.target.value).toFixed(1));
+
+  // Messages from extension shell (recording events)
+  window.addEventListener('message', handleExtMessage);
+});
+
+function handleExtMessage(e) {
+  const { type, data } = e.data || {};
+  if (type === 'RECORDING_STARTED') {
+    document.getElementById('rec-dot').className = 'sdot recording';
+    document.getElementById('rec-status').textContent = 'Recording...';
+    document.getElementById('rec-idle').classList.add('hidden');
+    document.getElementById('rec-recording').classList.remove('hidden');
+    document.getElementById('rec-done').classList.add('hidden');
+  }
+  if (type === 'RECORDING_TICK') {
+    document.getElementById('rec-timer').textContent = data.time;
+  }
+  if (type === 'RECORDING_DONE') {
+    recordingSize = data.size;
+    recordingReady = true;
+    document.getElementById('rec-dot').className = 'sdot ready';
+    document.getElementById('rec-status').textContent = `Captured ${fmt(data.size)}`;
+    document.getElementById('rec-size-label').textContent = fmt(data.size);
+    document.getElementById('rec-idle').classList.add('hidden');
+    document.getElementById('rec-recording').classList.add('hidden');
+    document.getElementById('rec-done').classList.remove('hidden');
+  }
+  if (type === 'RECORDING_ERROR') {
+    document.getElementById('rec-status').textContent = data.error;
+    document.getElementById('rec-idle').classList.remove('hidden');
+    document.getElementById('rec-recording').classList.add('hidden');
+  }
+  if (type === 'UPLOAD_DONE') {
+    document.getElementById('gen-jobid').textContent = `Job: ${data.id}`;
+    document.getElementById('gen-link').href = `${serverUrl}/dashboard?job=${data.id}`;
+    document.getElementById('gen-success').classList.remove('hidden');
+    document.getElementById('btn-generate').classList.add('hidden');
+  }
+  if (type === 'UPLOAD_ERROR') {
+    const w = document.getElementById('gen-warn');
+    w.textContent = '❌ ' + data.error; w.classList.remove('hidden');
+    const btn = document.getElementById('btn-generate');
+    btn.disabled = false; btn.textContent = '🚀 Generate Demo Video';
+  }
+}
+
+// ── Health check ──────────────────────────────────────────────────
+async function checkHealth() {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  try {
+    const r = await fetch(`${serverUrl}/health`);
+    const d = await r.json();
+    if (d.status === 'ok') {
+      dot.className = 'conn-dot ok';
+      lbl.textContent = d.storage?.db && d.storage?.r2 ? 'Live ✅' : 'Connected';
+    }
+  } catch {
+    dot.className = 'conn-dot err';
+    lbl.textContent = 'Offline';
+  }
+}
+
+// ── Nav ───────────────────────────────────────────────────────────
+function switchNav(n) {
+  ['projects','wizard','reel','settings'].forEach(x => {
+    document.getElementById(`nav-${x}`).classList.toggle('active', x === n);
+    document.getElementById(`panel-${x}`).classList.toggle('active', x === n);
+  });
+  if (n === 'projects') loadProjects();
+}
+
+// ── Projects ──────────────────────────────────────────────────────
+async function loadProjects(silent = false) {
+  const list = document.getElementById('project-list');
+  if (!silent) list.innerHTML = '<div class="empty-state">Loading...</div>';
+  try {
+    const r = await fetch(`${serverUrl}/api/history?limit=50`);
+    const data = await r.json();
+    const jobs = data.jobs || [];
+    if (!jobs.length) { list.innerHTML = '<div class="empty-state">No projects yet.<br><br>Click ✨ New Demo to start!</div>'; return; }
+    list.innerHTML = jobs.map(j => {
+      const d = j.created_at ? new Date(j.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      const name = (j.url||j.id||'').replace(/^https?:\/\//,'').slice(0,38);
+      const ready = j.status === 'completed';
+      const proc = ['processing','queued'].includes(j.status);
+      const dl = j.video_url || `${serverUrl}/api/download/${j.id}`;
+      const pct = j.progress_percent||(ready?100:proc?50:0);
+      const sc={completed:'st-completed',processing:'st-processing',queued:'st-queued',failed:'st-failed'}[j.status]||'st-queued';
+      const sl={completed:'✅',processing:'⚙️',queued:'⏳',failed:'❌'}[j.status]||j.status;
+      return `<div class="project-card">
+        <div class="project-thumb">${j.thumbnail_url?`<img src="${j.thumbnail_url}" loading="lazy">`:'🎬'}<div class="p-badge ${sc}">${sl}</div></div>
+        ${proc?`<div class="p-prog"><div class="p-prog-bar" style="width:${pct}%"></div></div>`:''}
+        <div class="p-body">
+          <div class="p-name">${name||'Recording'}</div>
+          <div class="p-meta">${d?`<span>📅 ${d}</span>`:''}</div>
+          <div class="p-actions">
+            ${ready
+              ?`<a class="pa pa-dl" href="${dl}" target="_blank">⬇</a><a class="pa pa-open" href="${serverUrl}/dashboard?job=${j.id}" target="_blank">▶ Open</a>`
+              :proc?`<a class="pa pa-open" href="${serverUrl}/dashboard?job=${j.id}" target="_blank">👁 Watch</a>`
+              :`<div class="pa pa-dim">N/A</div>`
+            }
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch { if (!silent) list.innerHTML = '<div class="empty-state">Could not load projects</div>'; }
+}
+
+// ── Wizard ────────────────────────────────────────────────────────
+function goStep(n) {
+  for (let i=1;i<=4;i++) {
+    document.getElementById(`step-${i}`)?.classList.toggle('active',i===n);
+    const ws=document.getElementById(`ws-${i}`);
+    if(ws){ws.classList.remove('active','done');if(i<n)ws.classList.add('done');else if(i===n)ws.classList.add('active');}
+  }
+  if (n===4) renderS4();
+}
+
+function renderS4() {
+  const speed = document.getElementById('opt-speed').value;
+  const blur = document.getElementById('opt-blur').checked;
+  const title = document.getElementById('proj-title').value || '(no title)';
+  const voice = document.getElementById('proj-voice');
+  const vt = voice.options[voice.selectedIndex]?.text.split(' ')[0] || '';
+  document.getElementById('s4-summary').innerHTML = `
+    <div>📹 <b>Recording</b><br><span>${recordingSize?fmt(recordingSize):'Uploaded'}</span></div>
+    <div>✍️ <b>Title</b><br><span>${title}</span></div>
+    <div>⚡ <b>Speed</b><br><span>${speed}x</span></div>
+    <div>🗣 <b>Voice</b><br><span>${vt}</span></div>
+    <div>🔐 <b>Blur</b><br><span style="color:${blur?'#4ade80':'#8b949e'}">${blur?'Yes':'No'}</span></div>
+    <div>📝 <b>Chapters</b><br><span style="color:${document.getElementById('opt-chapters').checked?'#4ade80':'#8b949e'}">${document.getElementById('opt-chapters').checked?'Yes':'No'}</span></div>`;
+}
+
+function handleUpload(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  recordingSize = f.size;
+  recordingReady = true;
+  document.getElementById('rec-size-label').textContent = fmt(f.size);
+  document.getElementById('rec-status').textContent = `Loaded: ${f.name}`;
+  document.getElementById('rec-idle').classList.add('hidden');
+  document.getElementById('rec-recording').classList.add('hidden');
+  document.getElementById('rec-done').classList.remove('hidden');
+  // Store file reference for upload
+  window._uploadFile = f;
+}
+
+function discardRecording() {
+  recordingSize = 0; recordingReady = false; window._uploadFile = null;
+  document.getElementById('rec-dot').className = 'sdot ready';
+  document.getElementById('rec-status').textContent = 'Ready';
+  document.getElementById('rec-idle').classList.remove('hidden');
+  document.getElementById('rec-recording').classList.add('hidden');
+  document.getElementById('rec-done').classList.add('hidden');
+}
+
+function generateDemo() {
+  const desc = document.getElementById('proj-desc').value.trim();
+  const warnEl = document.getElementById('gen-warn');
+  warnEl.classList.add('hidden');
+  if (!desc) { warnEl.textContent = '⚠️ Describe the feature in Step 3.'; warnEl.classList.remove('hidden'); return; }
+  if (!recordingReady) { warnEl.textContent = '⚠️ No recording. Go back to Step 1.'; warnEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true; btn.textContent = '⏳ Uploading...';
+
+  // Tell extension shell to upload with these options
+  post('START_RECORDING', {
+    autoUpload: true,
+    description: desc,
+    title: document.getElementById('proj-title').value.trim() || desc.slice(0,50),
+    purpose: document.getElementById('proj-purpose').value,
+    tone: document.getElementById('proj-tone').value,
+    voice: document.getElementById('proj-voice').value,
+    speed: document.getElementById('opt-speed').value,
+    blurCredentials: document.getElementById('opt-blur').checked,
+    chapters: document.getElementById('opt-chapters').checked,
+    autoZoom: document.getElementById('opt-zoom').checked,
+    webcam: document.getElementById('opt-webcam').checked,
+    _triggerUploadOnly: true,
+  });
+}
+
+function startOver() {
+  discardRecording();
+  document.getElementById('proj-title').value = '';
+  document.getElementById('proj-desc').value = '';
+  document.getElementById('gen-success').classList.add('hidden');
+  document.getElementById('btn-generate').classList.remove('hidden');
+  document.getElementById('btn-generate').disabled = false;
+  document.getElementById('btn-generate').textContent = '🚀 Generate Demo Video';
+  goStep(1);
+  switchNav('wizard');
+}
+
+// ── Reel ──────────────────────────────────────────────────────────
+function renderReelClips() {
+  const c = document.getElementById('reel-clips');
+  if (!reelClips.length) { c.innerHTML = '<div style="color:#8b949e;font-size:0.72rem;text-align:center;">No clips yet</div>'; return; }
+  c.innerHTML = reelClips.map((clip,i) =>
+    `<div style="display:flex;align-items:center;gap:5px;background:#161b22;border:1px solid #30363d;border-radius:5px;padding:5px 7px;margin-bottom:4px;font-size:0.72rem;">
+      <span style="background:#2563eb;color:#fff;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;flex-shrink:0;">${i+1}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${clip.name}</span>
+      <span style="color:#8b949e;">${fmt(clip.size)}</span>
+      <span style="cursor:pointer;color:#8b949e;" data-idx="${i}" class="clip-del">✕</span>
+    </div>`
+  ).join('');
+  c.querySelectorAll('.clip-del').forEach(b => b.addEventListener('click', () => { reelClips.splice(parseInt(b.dataset.idx),1); renderReelClips(); }));
+}
+
+function reelAddFiles(e) {
+  Array.from(e.target.files).forEach(f => reelClips.push({name:f.name,file:f,size:f.size}));
+  renderReelClips();
+  e.target.value = '';
+}
+
+async function generateReel() {
+  const warnEl = document.getElementById('reel-warn');
+  warnEl.classList.add('hidden');
+  const desc = document.getElementById('reel-desc').value.trim();
+  if (!desc) { warnEl.textContent='⚠️ Add description.'; warnEl.classList.remove('hidden'); return; }
+  if (reelClips.length < 2) { warnEl.textContent='⚠️ Need at least 2 clips.'; warnEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('reel-generate');
+  btn.disabled=true; btn.textContent='⏳ Uploading...';
+  try {
+    const fd = new FormData();
+    reelClips.forEach((c,i) => fd.append(`clip_${i}`, c.file));
+    fd.append('description', desc);
+    fd.append('sfx', document.getElementById('reel-sfx').value);
+    fd.append('speed', document.getElementById('reel-speed').value);
+    fd.append('voice', document.getElementById('reel-voice').value);
+    const r = await fetch(`${serverUrl}/api/upload-reel`, {method:'POST',body:fd});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const {id} = await r.json();
+    document.getElementById('reel-link').href = `${serverUrl}/dashboard?job=${id}`;
+    document.getElementById('reel-success').classList.remove('hidden');
+    openTab(`${serverUrl}/dashboard?job=${id}`);
+  } catch(err) {
+    warnEl.textContent='❌ '+err.message; warnEl.classList.remove('hidden');
+  } finally {
+    btn.disabled=false; btn.textContent='🚀 Generate Reel';
+  }
+}
+</script>
+</body>
+</html>

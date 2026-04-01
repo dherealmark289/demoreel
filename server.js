@@ -779,6 +779,11 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+// ─── Extension popup (hosted UI — updates without reinstall) ─────────────────
+app.get('/extension-popup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'extension-popup.html'));
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW v3 ENDPOINTS: Screen Recording Upload + Assembly Pipeline + X Post
 // ─────────────────────────────────────────────────────────────────────────────
