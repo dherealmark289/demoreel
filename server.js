@@ -819,6 +819,10 @@ app.post('/api/upload-recording', upload.single('recording'), async (req, res) =
       cursor = 'true',
       webcam = 'false',
       region = null,
+      bgColor = '#0d1117',
+      bgStyle = 'dark-studio',
+      bgFrame = 'none',
+      bgPadding = '40',
     } = req.body;
 
     const id = uuidv4();
@@ -880,6 +884,9 @@ app.post('/api/upload-recording', upload.single('recording'), async (req, res) =
       cursor: cursor === 'true',
       webcam: webcam === 'true',
       region: parsedRegion,
+      bgColor,
+      bgFrame,
+      bgPadding: parseInt(bgPadding) || 40,
     });
 
     res.json({ id, status: 'processing', message: 'Recording uploaded. Pipeline started.' });
@@ -976,7 +983,7 @@ app.get('/api/xpost/:id', async (req, res) => {
  * Core assembly pipeline: script → VO → Shotstack
  * Enhanced with: credential blur, chapters, speed control, region crop, webcam overlay
  */
-async function runAssemblyPipeline({ id, job, recordingUrl, description, title, purpose, tone, duration, voice, speed = 1, blurCredentials = false, chapters = false, autoZoom = false, cursor = true, webcam = false, region = null }) {
+async function runAssemblyPipeline({ id, job, recordingUrl, description, title, purpose, tone, duration, voice, speed = 1, blurCredentials = false, chapters = false, autoZoom = false, cursor = true, webcam = false, region = null, bgColor = '#0d1117', bgFrame = 'none', bgPadding = 40 }) {
   try {
     // Step 1: Generate script via Claude
     job.progress = 'Generating script with Claude...';
@@ -1034,6 +1041,9 @@ async function runAssemblyPipeline({ id, job, recordingUrl, description, title, 
       cursorEffects: cursor,
       webcamOverlay: webcam,
       region,
+      bgColor,
+      bgFrame,
+      bgPadding,
     });
 
     job.shotstackRenderId = renderId;

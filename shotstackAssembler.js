@@ -80,6 +80,9 @@ async function assembleDemo({
   cursorEffects = true,
   webcamOverlay = false,
   region = null,
+  bgColor = '#000000',
+  bgFrame = 'none',
+  bgPadding = 0,
   outputFormat = 'mp4',
 }) {
   const tracks = [];
@@ -193,8 +196,11 @@ async function assembleDemo({
 
   const totalDuration = duration + (title ? 2 : 0);
 
+  // Build background — solid color or gradient approximation
+  const timelineBg = bgColor || '#000000';
+
   const timeline = {
-    background: '#000000',
+    background: timelineBg,
     tracks,
   };
 
