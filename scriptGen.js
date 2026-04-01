@@ -1,10 +1,12 @@
 /**
- * scriptGen.js — Gemini-powered script generation for DemoReel
+ * scriptGen.js — Claude-powered script generation for DemoReel
+ * Replaced Gemini → Claude (claude-haiku-4-5) for speed + cost
  */
 
 const https = require('https');
+const Anthropic = require('@anthropic-ai/sdk');
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
  * Fetch page content via simple HTTP GET (text only)
@@ -19,7 +21,7 @@ async function fetchPageText(url) {
         path: parsed.pathname + parsed.search,
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; DemoReel/2.0)',
+          'User-Agent': 'Mozilla/5.0 (compatible; DemoReel/3.0)',
           'Accept': 'text/html',
         },
         timeout: 10000,
@@ -29,7 +31,6 @@ async function fetchPageText(url) {
         let data = '';
         res.on('data', chunk => { data += chunk; });
         res.on('end', () => {
-          // Strip HTML tags and excess whitespace
           const text = data
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -51,55 +52,14 @@ async function fetchPageText(url) {
 }
 
 /**
- * Call Gemini Flash API
+ * Generate a narration script for a given URL or description
  */
-async function callGemini(prompt) {
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable not set');
+async function generateScript({ url, purpose = 'product-demo', duration = 30, tone = 'professional', description = '' }) {
+  // Fetch page text if URL is provided
+  let pageText = '';
+  if (url) {
+    pageText = await fetchPageText(url);
   }
-
-  const body = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-  });
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.error) return reject(new Error(json.error.message));
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          resolve(text);
-        } catch (e) {
-          reject(new Error('Failed to parse Gemini response'));
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-/**
- * Generate a narration script for a given URL
- */
-async function generateScript({ url, purpose = 'product-demo', duration = 30, tone = 'professional' }) {
-  const pageText = await fetchPageText(url);
 
   const purposeLabels = {
     'product-demo': 'product demonstration',
@@ -115,12 +75,18 @@ async function generateScript({ url, purpose = 'product-demo', duration = 30, to
     technical: 'detailed and technical',
   };
 
-  const prompt = `You are a professional video narrator for tech demos.
+  const contextParts = [];
+  if (description) contextParts.push(`Feature description: ${description}`);
+  if (url) contextParts.push(`URL: ${url}`);
+  if (pageText) contextParts.push(`Page content (excerpt): ${pageText}`);
 
-URL: ${url}
-Page content (excerpt): ${pageText || '(could not fetch page content)'}
+  const context = contextParts.join('\n\n') || 'No additional context provided.';
 
-Create a ${toneLabels[tone] || 'professional'} voiceover script for a ${purposeLabels[purpose] || 'product demo'} video that is approximately ${duration} seconds long.
+  const prompt = `You are a professional product demo script writer.
+
+${context}
+
+Write a ${toneLabels[tone] || 'professional'} voiceover script for a ${purposeLabels[purpose] || 'product demo'} video that is approximately ${duration} seconds long.
 
 Requirements:
 - Natural speaking pace (~150 words/min, so ~${Math.round(duration * 150 / 60)} words)
@@ -130,14 +96,20 @@ Requirements:
 
 Then provide a JSON breakdown of sections tied to scroll position percentages.
 
-Format your response as:
+Format your response EXACTLY as:
 SCRIPT:
 [the narration text here]
 
 SECTIONS:
 [{"text": "first sentence or two", "scrollPercent": 0}, {"text": "next section", "scrollPercent": 30}, ...]`;
 
-  const rawResponse = await callGemini(prompt);
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const rawResponse = message.content[0].text;
 
   // Parse response
   let script = '';

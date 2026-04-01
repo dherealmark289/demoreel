@@ -133,7 +133,7 @@ class Storage {
 
     const allowed = [
       'status', 'video_url', 'video_size_bytes', 'duration_seconds',
-      'thumbnail_url', 'script', 'voiceover_url', 'error', 'completed_at',
+      'thumbnail_url', 'script', 'voiceover_url', 'error', 'completed_at', 'xpost',
     ];
 
     for (const key of allowed) {
@@ -233,6 +233,25 @@ class Storage {
       return url;
     } catch (e) {
       console.warn('[storage] uploadVideo failed:', e.message);
+      return null;
+    }
+  }
+
+  // Generic R2 upload (for recordings, voiceovers, etc.)
+  async uploadToR2(key, buffer, contentType = 'application/octet-stream') {
+    if (!this.r2Available || !this.s3) return null;
+    try {
+      await this.s3.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        CacheControl: 'public, max-age=86400',
+      }));
+      const url = `${this.publicUrl}/${key}`;
+      return url;
+    } catch (e) {
+      console.warn('[storage] uploadToR2 failed:', e.message);
       return null;
     }
   }

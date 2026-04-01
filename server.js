@@ -1,18 +1,35 @@
 /**
- * server.js — DemoReel Express backend (v2)
+ * server.js — DemoReel Express backend (v3)
  * Agent-first demo video studio with comprehensive REST API
  * + Persistent storage: Supabase (PostgreSQL) + Cloudflare R2
+ * + Claude script gen + ElevenLabs VO + Shotstack assembly + X post gen
  */
 
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { record, VIEWPORTS } = require('./recorder');
 const { generateScript } = require('./scriptGen');
 const { generateVoiceover, getVoiceList, cleanupOldAudio } = require('./voiceover');
 const { TRACK_METADATA } = require('./musicGen');
 const { Storage } = require('./storage');
+const { assembleDemo, pollShotstack } = require('./shotstackAssembler');
+const { generateXPost } = require('./xPostGen');
+
+// Multer config for screen recording uploads
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: '/tmp',
+    filename: (req, file, cb) => cb(null, `upload-${uuidv4()}.${file.mimetype.includes('mp4') ? 'mp4' : 'webm'}`),
+  }),
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) cb(null, true);
+    else cb(new Error('Only video files are accepted'));
+  },
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -741,13 +758,275 @@ app.get('/api/docs', (req, res) => {
 // ─── Serve audio files from public/audio ─────────────────────────────────────
 app.use('/audio', express.static(path.join(__dirname, 'public', 'audio')));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW v3 ENDPOINTS: Screen Recording Upload + Assembly Pipeline + X Post
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/upload-recording
+ * Accept a screen recording file upload + description → run full pipeline
+ * Body (multipart): recording (video file), description, title, purpose, tone, duration, voice
+ */
+app.post('/api/upload-recording', upload.single('recording'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No recording file uploaded. Use field name: recording' });
+    }
+
+    const {
+      description = '',
+      title = '',
+      purpose = 'product-demo',
+      tone = 'professional',
+      duration = 30,
+      voice = 'alloy',
+    } = req.body;
+
+    const id = uuidv4();
+
+    // Upload to R2
+    let recordingUrl = null;
+    try {
+      const fileBuffer = fs.readFileSync(file.path);
+      const r2Key = `recordings/${id}.${file.path.endsWith('.mp4') ? 'mp4' : 'webm'}`;
+      recordingUrl = await storage.uploadToR2(r2Key, fileBuffer, file.mimetype || 'video/webm');
+    } catch (e) {
+      console.warn('[upload-recording] R2 upload failed, using tmp path:', e.message);
+      recordingUrl = null;
+    }
+
+    // Create job record
+    const job = {
+      status: 'processing',
+      progress: 'Uploading recording...',
+      progressPercent: 10,
+      outputPath: file.path,
+      recordingUrl,
+      videoUrl: null,
+      thumbnailUrl: null,
+      error: null,
+      createdAt: Date.now(),
+      estimatedTime: parseInt(duration) + 30,
+      metadata: { duration: null, fileSize: file.size, resolution: null, scenes: 0 },
+      script: null,
+      voiceoverUrl: null,
+      shotstackRenderId: null,
+      assembledVideoUrl: null,
+      xpost: null,
+    };
+
+    jobs.set(id, job);
+    storage.createJob(id, title || 'Screen Recording', { purpose, tone, duration, voice }, getClientIp(req), req.headers['user-agent']).catch(() => {});
+
+    // Run pipeline async
+    runAssemblyPipeline({ id, job, recordingUrl: recordingUrl || `file://${file.path}`, description, title, purpose, tone, duration: parseInt(duration), voice });
+
+    res.json({ id, status: 'processing', message: 'Recording uploaded. Pipeline started.' });
+  } catch (err) {
+    console.error('[upload-recording] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/assemble
+ * Accept a recording URL + description → run full pipeline
+ * Body (JSON): { recordingUrl, description, title, purpose, tone, duration, voice }
+ */
+app.post('/api/assemble', async (req, res) => {
+  const {
+    recordingUrl,
+    description = '',
+    title = '',
+    purpose = 'product-demo',
+    tone = 'professional',
+    duration = 30,
+    voice = 'alloy',
+  } = req.body;
+
+  if (!recordingUrl) {
+    return res.status(400).json({ error: 'recordingUrl is required' });
+  }
+
+  const id = uuidv4();
+  const job = {
+    status: 'processing',
+    progress: 'Starting assembly pipeline...',
+    progressPercent: 5,
+    outputPath: null,
+    recordingUrl,
+    videoUrl: null,
+    thumbnailUrl: null,
+    error: null,
+    createdAt: Date.now(),
+    estimatedTime: parseInt(duration) + 45,
+    metadata: { duration: null, fileSize: null, resolution: null, scenes: 0 },
+    script: null,
+    voiceoverUrl: null,
+    shotstackRenderId: null,
+    assembledVideoUrl: null,
+    xpost: null,
+  };
+
+  jobs.set(id, job);
+  storage.createJob(id, recordingUrl, { purpose, tone, duration, voice }, getClientIp(req), req.headers['user-agent']).catch(() => {});
+
+  runAssemblyPipeline({ id, job, recordingUrl, description, title, purpose, tone, duration: parseInt(duration), voice });
+
+  res.json({ id, status: 'processing', message: 'Assembly pipeline started.' });
+});
+
+/**
+ * GET /api/xpost/:id
+ * Generate X post copy for a completed job
+ */
+app.get('/api/xpost/:id', async (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  // Return cached xpost if available
+  if (job.xpost) {
+    return res.json(job.xpost);
+  }
+
+  if (!job.script) {
+    return res.status(400).json({ error: 'No script available for this job. Run the assembly pipeline first.' });
+  }
+
+  try {
+    const xpost = await generateXPost({
+      script: job.script,
+      title: job.metadata?.title || '',
+      url: job.url || '',
+      tone: job.metadata?.tone || 'professional',
+    });
+    job.xpost = xpost;
+    storage.updateJob(req.params.id, { xpost: JSON.stringify(xpost) }).catch(() => {});
+    res.json(xpost);
+  } catch (err) {
+    console.error('[xpost] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Core assembly pipeline: script → VO → Shotstack
+ */
+async function runAssemblyPipeline({ id, job, recordingUrl, description, title, purpose, tone, duration, voice }) {
+  try {
+    // Step 1: Generate script via Claude
+    job.progress = 'Generating script with Claude...';
+    job.progressPercent = 20;
+
+    const { script, sections } = await generateScript({
+      url: null,
+      description,
+      purpose,
+      duration,
+      tone,
+    });
+
+    job.script = script;
+    job.progressPercent = 40;
+    job.progress = 'Generating voiceover with ElevenLabs...';
+
+    // Step 2: Generate voiceover
+    let voiceoverUrl = null;
+    try {
+      const vo = await generateVoiceover({ script, voice, provider: 'elevenlabs' });
+      voiceoverUrl = vo.audioUrl;
+      job.voiceoverUrl = voiceoverUrl;
+
+      // Upload VO to R2
+      if (vo.audioPath) {
+        try {
+          const audioBuffer = fs.readFileSync(vo.audioPath);
+          const r2Key = `voiceovers/${id}.mp3`;
+          const r2Url = await storage.uploadToR2(r2Key, audioBuffer, 'audio/mpeg');
+          voiceoverUrl = r2Url;
+          job.voiceoverUrl = r2Url;
+        } catch { /* use local URL */ }
+      }
+    } catch (voErr) {
+      console.warn('[pipeline] VO generation failed:', voErr.message);
+    }
+
+    job.progressPercent = 60;
+    job.progress = 'Assembling video with Shotstack...';
+
+    // Step 3: Shotstack assembly
+    const { renderId } = await assembleDemo({
+      screenRecordingUrl: recordingUrl,
+      voiceoverUrl: voiceoverUrl ? `https://demoreel-production.up.railway.app${voiceoverUrl}` : null,
+      script,
+      sections,
+      duration,
+      title,
+    });
+
+    job.shotstackRenderId = renderId;
+    job.progress = 'Rendering video (Shotstack)...';
+    job.progressPercent = 70;
+
+    // Step 4: Poll Shotstack until done (max 5 min)
+    let renderDone = false;
+    let assembledUrl = null;
+    const maxAttempts = 60;
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const poll = await pollShotstack(renderId);
+
+      if (poll.status === 'done') {
+        assembledUrl = poll.url;
+        renderDone = true;
+        break;
+      } else if (poll.status === 'failed') {
+        throw new Error(`Shotstack render failed: ${poll.error}`);
+      }
+
+      job.progressPercent = 70 + Math.round((i / maxAttempts) * 25);
+      job.progress = `Rendering (${poll.status})...`;
+    }
+
+    if (!renderDone) {
+      throw new Error('Shotstack render timed out after 5 minutes');
+    }
+
+    // Done!
+    job.status = 'completed';
+    job.progress = 'Done!';
+    job.progressPercent = 100;
+    job.assembledVideoUrl = assembledUrl;
+    job.videoUrl = assembledUrl;
+
+    storage.updateJob(id, {
+      status: 'completed',
+      video_url: assembledUrl,
+      script,
+      voiceover_url: voiceoverUrl,
+    }).catch(() => {});
+
+    console.log(`[pipeline] Job ${id} completed. Video: ${assembledUrl}`);
+
+  } catch (err) {
+    console.error(`[pipeline] Job ${id} failed:`, err);
+    job.status = 'failed';
+    job.error = err.message;
+    job.progressPercent = 0;
+    storage.updateJob(id, { status: 'failed', error: err.message }).catch(() => {});
+  }
+}
+
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function start() {
   // Init storage (non-blocking if unavailable)
   await storage.init();
 
   app.listen(PORT, () => {
-    console.log(`🎬 DemoReel v2 running on port ${PORT}`);
+    console.log(`🎬 DemoReel v3 running on port ${PORT}`);
     console.log(`   Health:  http://localhost:${PORT}/health`);
     console.log(`   API:     http://localhost:${PORT}/api/docs`);
     console.log(`   UI:      http://localhost:${PORT}/`);

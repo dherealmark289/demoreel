@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DemoReel Recorder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      padding: 0;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      padding: 16px 18px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-icon { font-size: 22px; }
+    .header-title { font-size: 1rem; font-weight: 700; }
+    .header-sub { font-size: 0.7rem; opacity: 0.8; }
+
+    .body { padding: 16px; }
+
+    .status-bar {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      font-size: 0.8rem;
+      color: #8b949e;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #30363d;
+      flex-shrink: 0;
+    }
+    .status-dot.ready { background: #16a34a; }
+    .status-dot.recording { background: #dc2626; animation: pulse 1s infinite; }
+    .status-dot.processing { background: #d97706; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .section-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8b949e;
+      margin-bottom: 6px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .toggle-label { font-size: 0.85rem; }
+    .toggle {
+      position: relative;
+      width: 36px; height: 20px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: #30363d;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    input:checked + .toggle-slider { background: #2563eb; }
+    input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+    select {
+      width: 100%;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      padding: 7px 10px;
+      font-size: 0.83rem;
+      margin-bottom: 12px;
+      cursor: pointer;
+    }
+
+    textarea {
+      width: 100%;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      padding: 8px 10px;
+      font-size: 0.83rem;
+      resize: vertical;
+      min-height: 70px;
+      font-family: inherit;
+      margin-bottom: 12px;
+    }
+    textarea:focus, select:focus { outline: none; border-color: #2563eb; }
+    textarea::placeholder { color: #8b949e; }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      margin-bottom: 8px;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; }
+    .btn-danger  { background: #dc2626; color: #fff; }
+    .btn-ghost   { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+
+    .result {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 0.8rem;
+    }
+    .result a { color: #60a5fa; text-decoration: none; }
+    .result a:hover { text-decoration: underline; }
+    .result .job-id { font-family: monospace; font-size: 0.75rem; color: #8b949e; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-icon">🎬</span>
+    <div>
+      <div class="header-title">DemoReel Recorder</div>
+      <div class="header-sub">Record → Generate → Post</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- Status -->
+    <div class="status-bar" id="statusBar">
+      <div class="status-dot ready" id="statusDot"></div>
+      <span id="statusText">Ready to record</span>
+    </div>
+
+    <!-- Pre-recording options -->
+    <div id="preRecordPanel">
+      <div class="toggle-row">
+        <span class="toggle-label">🖱️ Select region</span>
+        <label class="toggle">
+          <input type="checkbox" id="regionToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="section-label">Voice</div>
+      <select id="voiceSelect">
+        <option value="alloy">Rachel — calm, professional</option>
+        <option value="echo">Domi — energetic</option>
+        <option value="fable">Bella — warm, friendly</option>
+        <option value="onyx">Arnold — deep, authoritative</option>
+        <option value="nova">Adam — neutral male</option>
+        <option value="shimmer">Sam — casual</option>
+      </select>
+
+      <div class="section-label">Tone</div>
+      <select id="toneSelect">
+        <option value="professional">Professional</option>
+        <option value="casual">Casual</option>
+        <option value="exciting">Exciting</option>
+        <option value="technical">Technical</option>
+      </select>
+
+      <div class="section-label">Purpose</div>
+      <select id="purposeSelect">
+        <option value="product-demo">Product Demo</option>
+        <option value="showcase">Feature Showcase</option>
+        <option value="tutorial">Tutorial</option>
+        <option value="teaser">Teaser</option>
+      </select>
+
+      <button class="btn btn-primary" id="startBtn">⏺ Start Recording</button>
+    </div>
+
+    <!-- Recording in progress -->
+    <div id="recordingPanel" class="hidden">
+      <div style="text-align:center; padding: 8px 0 12px; color: #dc2626; font-weight: 600;">
+        ⏺ Recording in progress...
+      </div>
+      <button class="btn btn-danger" id="stopBtn">⏹ Stop Recording</button>
+    </div>
+
+    <!-- Post-recording: describe + generate -->
+    <div id="describePanel" class="hidden">
+      <div class="section-label">Describe this feature</div>
+      <textarea id="descriptionInput" placeholder="e.g. Showing how users can drag and drop files into the dashboard to upload them instantly..."></textarea>
+
+      <div class="section-label">Feature title (optional)</div>
+      <textarea id="titleInput" placeholder="e.g. Drag & Drop Upload" style="min-height:38px;"></textarea>
+
+      <button class="btn btn-primary" id="generateBtn">🚀 Generate Demo Video</button>
+      <button class="btn btn-ghost" id="discardBtn">🗑 Discard</button>
+    </div>
+
+    <!-- Result -->
+    <div id="resultPanel" class="hidden result">
+      <div style="margin-bottom:8px; font-weight:600;">✅ Pipeline started!</div>
+      <div class="job-id" id="jobIdDisplay"></div>
+      <div style="margin-top:8px;">
+        <a id="watchLink" href="#" target="_blank">👉 Watch progress & download video</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
