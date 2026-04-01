@@ -44,12 +44,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (type === 'START_RECORDING') {
-      if (data._triggerUploadOnly) {
-        // Upload the already-recorded blob with the given options
-        uploadRecording(serverUrl, data);
-      } else {
-        startRecording(serverUrl, data);
-      }
+      // Open the full-page recording tab — popup closes anyway when screen picker opens
+      const params = new URLSearchParams();
+      if (data.voice) params.set('voice', data.voice);
+      if (data.tone) params.set('tone', data.tone);
+      if (data.purpose) params.set('purpose', data.purpose);
+      chrome.tabs.create({ url: `${serverUrl}/record?${params.toString()}` });
     }
 
     if (type === 'GET_STORAGE') {

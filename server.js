@@ -784,6 +784,11 @@ app.get('/extension-popup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'extension-popup.html'));
 });
 
+// ─── Recording page (full-tab recorder with timer + stop button) ─────────────
+app.get('/record', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'record.html'));
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW v3 ENDPOINTS: Screen Recording Upload + Assembly Pipeline + X Post
 // ─────────────────────────────────────────────────────────────────────────────

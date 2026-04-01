@@ -346,7 +346,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-clear').addEventListener('click', () => { if (confirm('Clear all data?')) { post('SET_STORAGE', {}); location.reload(); } });
 
   // Wizard
-  document.getElementById('rec-start').addEventListener('click', () => { post('START_RECORDING', {}); });
+  document.getElementById('rec-start').addEventListener('click', () => {
+    // Open full-page recording tab (popup closes when screen picker opens anyway)
+    const voice = document.getElementById('proj-voice')?.value || 'alloy';
+    const tone = document.getElementById('proj-tone')?.value || 'professional';
+    const purpose = document.getElementById('proj-purpose')?.value || 'product-demo';
+    post('OPEN_TAB', { url: `${serverUrl}/record?voice=${voice}&tone=${tone}&purpose=${purpose}` });
+  });
   document.getElementById('rec-stop').addEventListener('click', () => post('STOP_RECORDING'));
   document.getElementById('upload-file').addEventListener('change', handleUpload);
   document.getElementById('btn-discard').addEventListener('click', discardRecording);

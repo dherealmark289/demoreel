@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DemoReel — Recording</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #1c2431;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --accent: #2563eb; --grad: linear-gradient(135deg,#2563eb,#7c3aed);
+      --green: #16a34a; --red: #dc2626;
+    }
+    html, body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px; max-width: 480px; width: 90%; }
+    .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; justify-content: center; }
+    .logo-icon { width: 40px; height: 40px; background: var(--grad); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .logo-text { font-size: 1.2rem; font-weight: 800; background: linear-gradient(90deg,#fff,#a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+    /* States */
+    .state { display: none; }
+    .state.active { display: block; }
+
+    /* Setup state */
+    .section-title { font-size: 0.88rem; font-weight: 700; margin-bottom: 6px; }
+    .section-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 18px; }
+
+    .option-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .option-row:last-of-type { border-bottom: none; }
+    .option-label { font-size: 0.88rem; }
+    .option-label small { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .tog { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+    .tog input { opacity: 0; width: 0; height: 0; }
+    .ts { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: .2s; }
+    .ts::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    input:checked + .ts { background: var(--accent); }
+    input:checked + .ts::before { transform: translateX(18px); }
+
+    .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; margin-top: 18px; }
+    .btn:hover { opacity: 0.88; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary { background: var(--grad); color: #fff; }
+    .btn-danger { background: var(--red); color: #fff; font-size: 1.1rem; }
+    .btn-green { background: var(--green); color: #fff; }
+    .btn-ghost { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+
+    /* Recording state */
+    .recording-indicator {
+      text-align: center; margin-bottom: 24px;
+    }
+    .rec-dot-big {
+      width: 20px; height: 20px; background: var(--red); border-radius: 50%;
+      display: inline-block; animation: recpulse 1.2s ease-in-out infinite;
+      margin-right: 8px; vertical-align: middle;
+    }
+    @keyframes recpulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
+    .rec-label { font-size: 1rem; font-weight: 700; vertical-align: middle; color: #fca5a5; }
+    .timer-display { font-size: 3.5rem; font-weight: 800; text-align: center; letter-spacing: 0.05em; margin: 16px 0; font-variant-numeric: tabular-nums; }
+    .timer-sub { text-align: center; font-size: 0.82rem; color: var(--muted); margin-bottom: 24px; }
+    .preview-box { width: 100%; aspect-ratio: 16/9; background: var(--bg3); border-radius: 10px; overflow: hidden; margin-bottom: 18px; display: flex; align-items: center; justify-content: center; position: relative; }
+    .preview-box video { width: 100%; height: 100%; object-fit: contain; }
+    .preview-hint { font-size: 0.8rem; color: var(--muted); text-align: center; }
+
+    /* Region selector overlay */
+    #region-overlay {
+      display: none; position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.5); cursor: crosshair; user-select: none;
+    }
+    #region-overlay.active { display: block; }
+    #region-box {
+      position: absolute; border: 2px solid #2563eb;
+      background: rgba(37,99,235,0.15); display: none;
+    }
+    #region-hint {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      background: rgba(0,0,0,0.8); color: #fff; padding: 12px 20px;
+      border-radius: 8px; font-size: 0.9rem; text-align: center;
+      pointer-events: none;
+    }
+
+    /* Describe state */
+    textarea, input[type=text] { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.9rem; outline: none; font-family: inherit; resize: vertical; }
+    textarea { min-height: 80px; margin-bottom: 12px; }
+    input[type=text] { margin-bottom: 12px; }
+    textarea:focus, input:focus { border-color: var(--accent); }
+    select { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.9rem; outline: none; margin-bottom: 12px; }
+    .lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin-bottom: 5px; display: block; }
+
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+
+    .warn { background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); border-radius: 6px; padding: 8px 12px; font-size: 0.82rem; color: #fca5a5; margin-bottom: 10px; }
+    .success-card { text-align: center; }
+    .success-icon { font-size: 3rem; margin-bottom: 12px; }
+    .success-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .success-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 20px; }
+    .success-link { display: block; padding: 12px; background: var(--grad); color: #fff; border-radius: 10px; text-decoration: none; font-weight: 700; margin-bottom: 8px; }
+    .success-link:hover { opacity: 0.88; }
+    .progress-bar-wrap { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+    .progress-bar { height: 100%; background: var(--grad); transition: width 0.5s; border-radius: 3px; }
+    .progress-label { font-size: 0.8rem; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+
+<!-- Region Selector Overlay -->
+<div id="region-overlay">
+  <div id="region-box"></div>
+  <div id="region-hint">🎯 Drag to select the region you want to record<br><small>Press Esc to cancel</small></div>
+</div>
+
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">🎬</div>
+    <div class="logo-text">DemoReel Recording</div>
+  </div>
+
+  <!-- STATE: Setup -->
+  <div class="state active" id="state-setup">
+    <div class="section-title">Ready to record</div>
+    <div class="section-sub">Choose your options, then start recording.</div>
+
+    <div class="option-row">
+      <div class="option-label">🟦 Select region <small>Draw a crop area before recording</small></div>
+      <label class="tog"><input type="checkbox" id="opt-region"><span class="ts"></span></label>
+    </div>
+    <div class="option-row">
+      <div class="option-label">📹 Webcam overlay <small>Add face bubble</small></div>
+      <label class="tog"><input type="checkbox" id="opt-webcam"><span class="ts"></span></label>
+    </div>
+    <div class="option-row">
+      <div class="option-label">🔐 Auto-blur credentials <small>Hide API keys & passwords</small></div>
+      <label class="tog"><input type="checkbox" id="opt-blur" checked><span class="ts"></span></label>
+    </div>
+    <div class="option-row">
+      <div class="option-label">⚡ Auto-zoom on clicks <small>Zoom in when you interact</small></div>
+      <label class="tog"><input type="checkbox" id="opt-zoom" checked><span class="ts"></span></label>
+    </div>
+
+    <div id="setup-warn" class="warn" style="display:none;margin-top:14px;"></div>
+    <button class="btn btn-primary" id="btn-start">⏺ Start Recording</button>
+    <button class="btn btn-ghost" id="btn-select-region" style="margin-top:8px;">🟦 Select Region First</button>
+    <div id="region-selected-label" style="display:none;text-align:center;font-size:0.8rem;color:#4ade80;margin-top:8px;">✅ Region selected</div>
+  </div>
+
+  <!-- STATE: Recording -->
+  <div class="state" id="state-recording">
+    <div class="recording-indicator">
+      <span class="rec-dot-big"></span>
+      <span class="rec-label">RECORDING</span>
+    </div>
+    <div class="timer-display" id="timer-display">0:00</div>
+    <div class="timer-sub">Your screen is being recorded</div>
+    <div class="preview-box" id="preview-box">
+      <video id="preview-video" muted autoplay playsinline></video>
+    </div>
+    <button class="btn btn-danger" id="btn-stop">⏹ Stop Recording</button>
+  </div>
+
+  <!-- STATE: Describe -->
+  <div class="state" id="state-describe">
+    <div class="section-title">✍️ Describe your recording</div>
+    <div class="section-sub">Claude will write a voiceover script from your description.</div>
+
+    <span class="lbl">Feature title</span>
+    <input type="text" id="desc-title" placeholder="e.g. Drag & Drop Upload">
+
+    <span class="lbl">What did you just record? *</span>
+    <textarea id="desc-text" placeholder="Describe the feature you showed. What problem does it solve? What steps did you demonstrate?"></textarea>
+
+    <div class="options-grid">
+      <div>
+        <span class="lbl">Purpose</span>
+        <select id="desc-purpose">
+          <option value="product-demo">Product Demo</option>
+          <option value="showcase">Feature Showcase</option>
+          <option value="tutorial">Tutorial</option>
+          <option value="teaser">Teaser</option>
+        </select>
+      </div>
+      <div>
+        <span class="lbl">Tone</span>
+        <select id="desc-tone">
+          <option value="professional">Professional</option>
+          <option value="casual">Casual</option>
+          <option value="exciting">Exciting</option>
+        </select>
+      </div>
+    </div>
+
+    <span class="lbl">Voice</span>
+    <select id="desc-voice">
+      <option value="alloy">Rachel — calm, professional ♀</option>
+      <option value="echo">Domi — energetic ♀</option>
+      <option value="fable">Bella — warm ♀</option>
+      <option value="onyx">Arnold — deep ♂</option>
+      <option value="nova">Adam — neutral ♂</option>
+    </select>
+
+    <div id="desc-warn" class="warn" style="display:none;"></div>
+    <button class="btn btn-primary" id="btn-generate">🚀 Generate Demo Video</button>
+    <button class="btn btn-ghost" id="btn-re-record" style="margin-top:8px;">🔄 Re-record</button>
+  </div>
+
+  <!-- STATE: Uploading -->
+  <div class="state" id="state-uploading">
+    <div style="text-align:center;">
+      <div style="font-size:2rem;margin-bottom:12px;">⬆️</div>
+      <div style="font-size:1rem;font-weight:700;margin-bottom:8px;">Uploading recording...</div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="upload-progress" style="width:30%"></div></div>
+      <div class="progress-label" id="upload-label">Starting pipeline...</div>
+    </div>
+  </div>
+
+  <!-- STATE: Success -->
+  <div class="state" id="state-success">
+    <div class="success-card">
+      <div class="success-icon">🎉</div>
+      <div class="success-title">Pipeline Started!</div>
+      <div class="success-sub">Claude is writing your script. ElevenLabs is generating voiceover. Shotstack is assembling your demo video.</div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="pipeline-progress" style="width:10%"></div></div>
+      <div class="progress-label" id="pipeline-label">Generating script...</div>
+      <a id="dashboard-link" href="/dashboard" target="_blank" class="success-link" style="margin-top:16px;">📊 Open Dashboard →</a>
+      <button class="btn btn-ghost" id="btn-record-again">🎬 Record Another</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const SERVER = location.origin;
+let mediaRecorder = null;
+let chunks = [];
+let stream = null;
+let timerInterval = null;
+let seconds = 0;
+let recordingBlob = null;
+let selectedRegion = null;
+let jobId = null;
+
+// ── State management ──────────────────────────────────────────────
+function showState(name) {
+  document.querySelectorAll('.state').forEach(s => s.classList.remove('active'));
+  document.getElementById(`state-${name}`).classList.add('active');
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', startRecording);
+document.getElementById('btn-stop').addEventListener('click', stopRecording);
+document.getElementById('btn-generate').addEventListener('click', generate);
+document.getElementById('btn-re-record').addEventListener('click', () => { showState('setup'); });
+document.getElementById('btn-record-again').addEventListener('click', () => { location.reload(); });
+document.getElementById('btn-select-region').addEventListener('click', startRegionSelect);
+
+// Parse URL params (passed from extension)
+const params = new URLSearchParams(location.search);
+if (params.get('voice')) document.getElementById('desc-voice').value = params.get('voice');
+if (params.get('tone')) document.getElementById('desc-tone').value = params.get('tone');
+if (params.get('purpose')) document.getElementById('desc-purpose').value = params.get('purpose');
+
+// ── Region Select ─────────────────────────────────────────────────
+function startRegionSelect() {
+  const overlay = document.getElementById('region-overlay');
+  const box = document.getElementById('region-box');
+  const hint = document.getElementById('region-hint');
+  let startX, startY, selecting = false;
+
+  overlay.classList.add('active');
+  box.style.display = 'none';
+
+  function onMouseDown(e) {
+    selecting = true;
+    startX = e.clientX; startY = e.clientY;
+    box.style.cssText = `display:block;left:${startX}px;top:${startY}px;width:0;height:0;`;
+    hint.style.display = 'none';
+  }
+  function onMouseMove(e) {
+    if (!selecting) return;
+    const x = Math.min(e.clientX, startX), y = Math.min(e.clientY, startY);
+    const w = Math.abs(e.clientX - startX), h = Math.abs(e.clientY - startY);
+    box.style.cssText = `display:block;left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
+  }
+  function onMouseUp(e) {
+    if (!selecting) return;
+    selecting = false;
+    const x = Math.min(e.clientX, startX), y = Math.min(e.clientY, startY);
+    const w = Math.abs(e.clientX - startX), h = Math.abs(e.clientY - startY);
+    overlay.classList.remove('active');
+    overlay.removeEventListener('mousedown', onMouseDown);
+    overlay.removeEventListener('mousemove', onMouseMove);
+    overlay.removeEventListener('mouseup', onMouseUp);
+    if (w > 20 && h > 20) {
+      selectedRegion = { x, y, width: w, height: h };
+      document.getElementById('region-selected-label').style.display = 'block';
+    }
+  }
+  function onKeyDown(e) {
+    if (e.key === 'Escape') {
+      overlay.classList.remove('active');
+      document.removeEventListener('keydown', onKeyDown);
+    }
+  }
+  overlay.addEventListener('mousedown', onMouseDown);
+  overlay.addEventListener('mousemove', onMouseMove);
+  overlay.addEventListener('mouseup', onMouseUp);
+  document.addEventListener('keydown', onKeyDown);
+}
+
+// ── Recording ─────────────────────────────────────────────────────
+async function startRecording() {
+  const warnEl = document.getElementById('setup-warn');
+  warnEl.style.display = 'none';
+
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always', frameRate: 30 },
+      audio: false,
+    });
+
+    // Show preview
+    const video = document.getElementById('preview-video');
+    video.srcObject = stream;
+
+    chunks = [];
+    const mimeType = getSupportedMime();
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = onStop;
+    stream.getVideoTracks()[0].addEventListener('ended', stopRecording);
+
+    // Start timer
+    seconds = 0;
+    updateTimer();
+    timerInterval = setInterval(updateTimer, 1000);
+
+    mediaRecorder.start(500);
+    showState('recording');
+
+  } catch (err) {
+    warnEl.textContent = err.name === 'NotAllowedError'
+      ? '⚠️ Screen recording permission denied. Please allow screen capture and try again.'
+      : '⚠️ ' + err.message;
+    warnEl.style.display = 'block';
+  }
+}
+
+function updateTimer() {
+  seconds++;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  document.getElementById('timer-display').textContent = `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function stopRecording() {
+  clearInterval(timerInterval);
+  if (mediaRecorder?.state !== 'inactive') mediaRecorder?.stop();
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+}
+
+function onStop() {
+  recordingBlob = new Blob(chunks, { type: getSupportedMime() });
+  showState('describe');
+}
+
+// ── Generate ──────────────────────────────────────────────────────
+async function generate() {
+  const desc = document.getElementById('desc-text').value.trim();
+  const warnEl = document.getElementById('desc-warn');
+  warnEl.style.display = 'none';
+
+  if (!desc) {
+    warnEl.textContent = '⚠️ Please describe what you recorded.';
+    warnEl.style.display = 'block';
+    return;
+  }
+  if (!recordingBlob) {
+    warnEl.textContent = '⚠️ No recording found. Please re-record.';
+    warnEl.style.display = 'block';
+    return;
+  }
+
+  showState('uploading');
+  animateUploadProgress();
+
+  const fd = new FormData();
+  fd.append('recording', recordingBlob, 'recording.webm');
+  fd.append('description', desc);
+  fd.append('title', document.getElementById('desc-title').value.trim() || desc.slice(0, 50));
+  fd.append('purpose', document.getElementById('desc-purpose').value);
+  fd.append('tone', document.getElementById('desc-tone').value);
+  fd.append('voice', document.getElementById('desc-voice').value);
+  fd.append('blurCredentials', document.getElementById('opt-blur').checked);
+  fd.append('autoZoom', document.getElementById('opt-zoom').checked);
+  fd.append('webcam', document.getElementById('opt-webcam').checked);
+  if (selectedRegion) fd.append('region', JSON.stringify(selectedRegion));
+
+  try {
+    const res = await fetch(`${SERVER}/api/upload-recording`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    jobId = data.id;
+
+    document.getElementById('dashboard-link').href = `${SERVER}/dashboard?job=${jobId}`;
+    showState('success');
+    pollPipelineStatus(jobId);
+
+  } catch (err) {
+    showState('describe');
+    document.getElementById('desc-warn').textContent = '❌ Upload failed: ' + err.message;
+    document.getElementById('desc-warn').style.display = 'block';
+  }
+}
+
+function animateUploadProgress() {
+  let pct = 10;
+  const bar = document.getElementById('upload-progress');
+  const lbl = document.getElementById('upload-label');
+  const steps = ['Uploading recording...', 'Processing...', 'Starting pipeline...'];
+  let step = 0;
+  const iv = setInterval(() => {
+    pct = Math.min(pct + 8, 90);
+    bar.style.width = pct + '%';
+    if (pct > 30 && step === 0) { lbl.textContent = steps[1]; step++; }
+    if (pct > 70 && step === 1) { lbl.textContent = steps[2]; step++; }
+    if (pct >= 90) clearInterval(iv);
+  }, 400);
+}
+
+function pollPipelineStatus(id) {
+  const bar = document.getElementById('pipeline-progress');
+  const lbl = document.getElementById('pipeline-label');
+  let attempts = 0;
+
+  const iv = setInterval(async () => {
+    attempts++;
+    if (attempts > 120) { clearInterval(iv); return; }
+    try {
+      const r = await fetch(`${SERVER}/api/status/${id}`);
+      const d = await r.json();
+      const pct = d.progress || d.progressPercent || 10;
+      bar.style.width = Math.min(pct, 99) + '%';
+      lbl.textContent = d.progressMessage || d.progress || 'Processing...';
+      if (d.status === 'completed') {
+        clearInterval(iv);
+        bar.style.width = '100%';
+        lbl.textContent = '✅ Done! Video ready.';
+      }
+      if (d.status === 'failed') {
+        clearInterval(iv);
+        lbl.textContent = '❌ ' + (d.error || 'Pipeline failed');
+      }
+    } catch {}
+  }, 3000);
+}
+
+function getSupportedMime() {
+  return ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+}
+</script>
+</body>
+</html>
