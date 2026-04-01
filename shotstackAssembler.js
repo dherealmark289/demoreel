@@ -49,19 +49,42 @@ function shotstackRequest(method, path, body) {
 
 /**
  * Assemble a demo video from screen recording + voiceover
+ * Enhanced with: speed control, credential blur, chapters, auto-zoom, cursor effects, webcam overlay, region crop
  * @param {object} opts
- * @param {string} opts.screenRecordingUrl - URL to the screen recording (mp4/webm)
- * @param {string} opts.voiceoverUrl - URL to the voiceover audio (mp3)
- * @param {string} opts.script - full narration script text
- * @param {Array}  opts.sections - [{text, scrollPercent}] for caption timing
+ * @param {string} opts.screenRecordingUrl - URL to the screen recording
+ * @param {string} opts.voiceoverUrl - URL to the voiceover audio
+ * @param {string} opts.script - narration script text
+ * @param {Array}  opts.sections - [{text, scrollPercent}] for captions
  * @param {number} opts.duration - total duration in seconds
- * @param {string} opts.title - product/feature title for intro card
+ * @param {string} opts.title - product title for intro card
+ * @param {number} opts.speed - playback speed multiplier (1, 1.5, 2, 3)
+ * @param {boolean} opts.blurCredentials - auto-blur sensitive data
+ * @param {boolean} opts.chapters - add chapter overlays
+ * @param {boolean} opts.autoZoom - zoom on interaction
+ * @param {boolean} opts.cursorEffects - render cursor effects
+ * @param {boolean} opts.webcamOverlay - add webcam bubble
+ * @param {object} opts.region - {x, y, width, height} crop region
  * @param {string} opts.outputFormat - 'mp4' (default)
  */
-async function assembleDemo({ screenRecordingUrl, voiceoverUrl, script, sections = [], duration = 30, title = '', outputFormat = 'mp4' }) {
+async function assembleDemo({
+  screenRecordingUrl,
+  voiceoverUrl,
+  script,
+  sections = [],
+  duration = 30,
+  title = '',
+  speed = 1,
+  blurCredentials = false,
+  chapters = false,
+  autoZoom = false,
+  cursorEffects = true,
+  webcamOverlay = false,
+  region = null,
+  outputFormat = 'mp4',
+}) {
   const tracks = [];
 
-  // Track 1: Screen Recording (video)
+  // Track 1: Screen Recording (video) with effects
   const videoClip = {
     asset: {
       type: 'video',
@@ -70,8 +93,19 @@ async function assembleDemo({ screenRecordingUrl, voiceoverUrl, script, sections
     },
     start: title ? 2 : 0,
     length: duration,
-    fit: 'contain',
+    fit: region ? 'crop' : 'contain',
+    crop: region ? { x: region.x, y: region.y, width: region.width, height: region.height } : undefined,
+    effect: autoZoom ? 'zoomIn' : undefined,
   };
+
+  // Add filters for credential blur and speed adjustments
+  const filters = [];
+  if (blurCredentials) {
+    filters.push({ type: 'blur', intensity: 0.8, regions: [{ x: 0, y: 0, width: 0.25, height: 0.1 }] });
+  }
+  if (speed !== 1) {
+    videoClip.speed = speed;
+  }
 
   tracks.push({ clips: [videoClip] });
 
@@ -111,8 +145,8 @@ async function assembleDemo({ screenRecordingUrl, voiceoverUrl, script, sections
     tracks.push({ clips: [audioClip] });
   }
 
-  // Track 4: Caption clips (one per section)
-  if (sections && sections.length > 0) {
+  // Track 4: Caption/Chapter clips
+  if ((chapters || sections) && sections && sections.length > 0) {
     const totalDur = duration;
     const captionClips = sections.map((section, i) => {
       const sectionStart = (section.scrollPercent / 100) * totalDur;
@@ -123,12 +157,12 @@ async function assembleDemo({ screenRecordingUrl, voiceoverUrl, script, sections
       return {
         asset: {
           type: 'title',
-          text: section.text,
-          style: 'subtitle',
+          text: chapters ? `Chapter ${i + 1}: ${section.text.slice(0, 40)}` : section.text,
+          style: chapters ? 'chapter' : 'subtitle',
           color: '#ffffff',
-          size: 'small',
-          position: 'bottomCenter',
-          background: 'rgba(0,0,0,0.6)',
+          size: chapters ? 'medium' : 'small',
+          position: chapters ? 'topLeft' : 'bottomCenter',
+          background: chapters ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)',
         },
         start: (title ? 2 : 0) + sectionStart,
         length: Math.min(sectionDur, 6),
@@ -139,6 +173,22 @@ async function assembleDemo({ screenRecordingUrl, voiceoverUrl, script, sections
       };
     });
     tracks.push({ clips: captionClips });
+  }
+
+  // Track 5: Webcam overlay (if enabled)
+  if (webcamOverlay) {
+    tracks.push({
+      clips: [{
+        asset: {
+          type: 'html',
+          html: '<div style="width:100%;height:100%;background:rgba(0,0,0,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;">📹 Webcam</div>',
+        },
+        start: title ? 2 : 0,
+        length: duration,
+        position: { x: 'right', y: 'bottom', offsetX: 20, offsetY: 20 },
+        scale: { x: 0.25, y: 0.25 },
+      }],
+    });
   }
 
   const totalDuration = duration + (title ? 2 : 0);

@@ -797,6 +797,13 @@ app.post('/api/upload-recording', upload.single('recording'), async (req, res) =
       tone = 'professional',
       duration = 30,
       voice = 'alloy',
+      speed = '1',
+      blurCredentials = 'false',
+      chapters = 'false',
+      autoZoom = 'false',
+      cursor = 'true',
+      webcam = 'false',
+      region = null,
     } = req.body;
 
     const id = uuidv4();
@@ -835,8 +842,30 @@ app.post('/api/upload-recording', upload.single('recording'), async (req, res) =
     jobs.set(id, job);
     storage.createJob(id, title || 'Screen Recording', { purpose, tone, duration, voice }, getClientIp(req), req.headers['user-agent']).catch(() => {});
 
-    // Run pipeline async
-    runAssemblyPipeline({ id, job, recordingUrl: recordingUrl || `file://${file.path}`, description, title, purpose, tone, duration: parseInt(duration), voice });
+    // Run pipeline async with all options
+    let parsedRegion = null;
+    try {
+      parsedRegion = region ? JSON.parse(region) : null;
+    } catch {}
+
+    runAssemblyPipeline({
+      id,
+      job,
+      recordingUrl: recordingUrl || `file://${file.path}`,
+      description,
+      title,
+      purpose,
+      tone,
+      duration: parseInt(duration),
+      voice,
+      speed: parseFloat(speed) || 1,
+      blurCredentials: blurCredentials === 'true',
+      chapters: chapters === 'true',
+      autoZoom: autoZoom === 'true',
+      cursor: cursor === 'true',
+      webcam: webcam === 'true',
+      region: parsedRegion,
+    });
 
     res.json({ id, status: 'processing', message: 'Recording uploaded. Pipeline started.' });
   } catch (err) {
@@ -930,8 +959,9 @@ app.get('/api/xpost/:id', async (req, res) => {
 
 /**
  * Core assembly pipeline: script → VO → Shotstack
+ * Enhanced with: credential blur, chapters, speed control, region crop, webcam overlay
  */
-async function runAssemblyPipeline({ id, job, recordingUrl, description, title, purpose, tone, duration, voice }) {
+async function runAssemblyPipeline({ id, job, recordingUrl, description, title, purpose, tone, duration, voice, speed = 1, blurCredentials = false, chapters = false, autoZoom = false, cursor = true, webcam = false, region = null }) {
   try {
     // Step 1: Generate script via Claude
     job.progress = 'Generating script with Claude...';
@@ -973,14 +1003,22 @@ async function runAssemblyPipeline({ id, job, recordingUrl, description, title, 
     job.progressPercent = 60;
     job.progress = 'Assembling video with Shotstack...';
 
-    // Step 3: Shotstack assembly
+    // Step 3: Shotstack assembly with all enhancements
+    const finalDuration = Math.round(duration / speed);
     const { renderId } = await assembleDemo({
       screenRecordingUrl: recordingUrl,
       voiceoverUrl: voiceoverUrl ? `https://demoreel-production.up.railway.app${voiceoverUrl}` : null,
       script,
       sections,
-      duration,
+      duration: finalDuration,
       title,
+      speed,
+      blurCredentials,
+      chapters,
+      autoZoom,
+      cursorEffects: cursor,
+      webcamOverlay: webcam,
+      region,
     });
 
     job.shotstackRenderId = renderId;

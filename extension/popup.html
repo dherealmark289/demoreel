@@ -6,7 +6,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 340px;
+      width: 360px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #0d1117;
       color: #e6edf3;
@@ -21,7 +21,6 @@
     .header-title { font-size: 0.95rem; font-weight: 700; }
     .header-sub { font-size: 0.68rem; opacity: 0.8; }
 
-    /* Tab Nav */
     .tab-nav {
       display: flex; background: #161b22;
       border-bottom: 1px solid #30363d;
@@ -35,10 +34,9 @@
     .tab.active { color: #60a5fa; border-bottom-color: #2563eb; }
     .tab:hover:not(.active) { color: #e6edf3; }
 
-    .tab-panel { display: none; padding: 14px; }
+    .tab-panel { display: none; padding: 14px; max-height: 500px; overflow-y: auto; }
     .tab-panel.active { display: block; }
 
-    /* Status bar */
     .status-bar {
       background: #161b22; border: 1px solid #30363d;
       border-radius: 8px; padding: 8px 12px;
@@ -48,18 +46,16 @@
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #30363d; flex-shrink: 0; }
     .dot.ready { background: #16a34a; }
     .dot.recording { background: #dc2626; animation: pulse 1s infinite; }
-    .dot.processing { background: #d97706; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-    /* Labels */
     .lbl {
       font-size: 0.68rem; text-transform: uppercase;
       letter-spacing: 0.06em; color: #8b949e; font-weight: 700;
-      margin-bottom: 5px; display: block;
+      margin-bottom: 5px; display: block; margin-top: 8px;
     }
+    .lbl:first-child { margin-top: 0; }
 
-    /* Inputs */
-    select, textarea, input[type=text], input[type=url] {
+    select, textarea, input[type=text], input[type=url], input[type=number], input[type=range] {
       width: 100%; background: #161b22; border: 1px solid #30363d;
       border-radius: 6px; color: #e6edf3; padding: 7px 10px;
       font-size: 0.82rem; outline: none; font-family: inherit;
@@ -67,52 +63,23 @@
     }
     select:focus, textarea:focus, input:focus { border-color: #2563eb; }
     textarea { resize: vertical; min-height: 60px; }
+    input[type=range] { padding: 0; margin: 0 0 10px 0; }
 
-    /* Clip list */
-    .clip-list { margin-bottom: 10px; }
-    .clip-item {
-      display: flex; align-items: center; gap: 8px;
-      background: #161b22; border: 1px solid #30363d;
-      border-radius: 7px; padding: 8px 10px; margin-bottom: 6px;
-      font-size: 0.78rem;
-    }
-    .clip-num {
-      background: #2563eb; color: #fff; border-radius: 50%;
-      width: 20px; height: 20px; display: flex; align-items: center;
-      justify-content: center; font-size: 0.68rem; font-weight: 700; flex-shrink: 0;
-    }
-    .clip-name { flex: 1; color: #e6edf3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .clip-size { color: #8b949e; font-size: 0.7rem; flex-shrink: 0; }
-    .clip-del { cursor: pointer; color: #8b949e; font-size: 1rem; padding: 0 2px; }
-    .clip-del:hover { color: #f87171; }
-    .clip-empty { text-align: center; color: #8b949e; font-size: 0.78rem; padding: 12px; }
-
-    /* Buttons */
-    .btn {
-      width: 100%; padding: 9px; border: none;
-      border-radius: 7px; font-size: 0.85rem; font-weight: 600;
-      cursor: pointer; transition: opacity 0.15s; margin-bottom: 7px;
-    }
-    .btn:hover { opacity: 0.88; }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-primary { background: linear-gradient(135deg,#2563eb,#7c3aed); color: #fff; }
-    .btn-danger  { background: #dc2626; color: #fff; }
-    .btn-green   { background: #16a34a; color: #fff; }
-    .btn-ghost   { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-    .btn-sm { padding: 6px 12px; font-size: 0.78rem; width: auto; display: inline-block; }
-
-    /* Toggle row */
-    .trow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-    .trow-label { font-size: 0.82rem; }
+    .trow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
+    .trow-label { font-size: 0.82rem; flex: 1; }
     .trow-label small { display: block; font-size: 0.68rem; color: #8b949e; }
-    .tog { position: relative; width: 36px; height: 20px; }
+    
+    .tog { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
     .tog input { opacity: 0; width: 0; height: 0; }
     .ts { position: absolute; inset: 0; background: #30363d; border-radius: 20px; cursor: pointer; transition: .2s; }
     .ts::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
     input:checked + .ts { background: #2563eb; }
     input:checked + .ts::before { transform: translateX(16px); }
 
-    /* Cursor style pills */
+    .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .slider-row input[type=range] { margin-bottom: 0; flex: 1; }
+    .slider-val { min-width: 40px; text-align: right; font-size: 0.82rem; font-weight: 600; }
+
     .pill-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
     .pill {
       padding: 5px 10px; border-radius: 16px; font-size: 0.72rem;
@@ -122,7 +89,21 @@
     .pill:hover { border-color: #2563eb; color: #e6edf3; }
     .pill.active { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
 
-    /* Result */
+    .btn {
+      width: 100%; padding: 9px; border: none;
+      border-radius: 7px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s; margin-bottom: 7px;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg,#2563eb,#7c3aed); color: #fff; }
+    .btn-danger  { background: #dc2626; color: #fff; }
+    .btn-ghost   { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    .btn-sm { padding: 6px 12px; font-size: 0.78rem; width: auto; display: inline-block; }
+
+    .advanced { background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.2); border-radius: 8px; padding: 10px; margin: 10px 0; }
+    .advanced-title { font-weight: 600; font-size: 0.8rem; margin-bottom: 8px; color: #60a5fa; }
+
     .result-box {
       background: #161b22; border: 1px solid #30363d;
       border-radius: 8px; padding: 12px; margin-top: 10px;
@@ -131,10 +112,8 @@
     .result-box a:hover { text-decoration: underline; }
     .job-id { font-family: monospace; font-size: 0.72rem; color: #8b949e; margin-top: 4px; }
 
-    .section { margin-bottom: 12px; }
-    .divider { height: 1px; background: #30363d; margin: 10px 0; }
-    .hidden { display: none !important; }
     .warn { background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); border-radius: 6px; padding: 8px 10px; font-size: 0.75rem; color: #fca5a5; margin-bottom: 8px; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -142,19 +121,18 @@
 <div class="header">
   <span class="header-icon">🎬</span>
   <div>
-    <div class="header-title">DemoReel Recorder</div>
-    <div class="header-sub">Record · Assemble · Post</div>
+    <div class="header-title">DemoReel Pro</div>
+    <div class="header-sub">Record · Enhance · Ship</div>
   </div>
 </div>
 
-<!-- Tab Nav -->
 <div class="tab-nav">
   <div class="tab active" onclick="switchTab('single')">⏺ Single</div>
-  <div class="tab" onclick="switchTab('reel')">🎞 Multi-Clip Reel</div>
+  <div class="tab" onclick="switchTab('reel')">🎞 Reel</div>
   <div class="tab" onclick="switchTab('settings')">⚙️ Settings</div>
 </div>
 
-<!-- ── SINGLE CLIP TAB ──────────────────────────────────────────── -->
+<!-- ── SINGLE CLIP ──────────────────────────────────────────────── -->
 <div class="tab-panel active" id="tab-single">
 
   <div class="status-bar">
@@ -162,47 +140,81 @@
     <span id="s-status">Ready to record</span>
   </div>
 
-  <!-- Pre-record -->
+  <!-- Recording options -->
   <div id="s-pre">
     <div class="trow">
-      <div class="trow-label">🟦 Select region <small>Draw a crop area first</small></div>
+      <div class="trow-label">🟦 Select region <small>Crop to area</small></div>
       <label class="tog"><input type="checkbox" id="s-region"><span class="ts"></span></label>
     </div>
+
     <div class="trow">
-      <div class="trow-label">🖱️ Cursor effects <small>Smooth + auto-enlarge on click</small></div>
-      <label class="tog"><input type="checkbox" id="s-cursor" checked><span class="ts"></span></label>
+      <div class="trow-label">📹 Include webcam <small>Face overlay</small></div>
+      <label class="tog"><input type="checkbox" id="s-webcam"><span class="ts"></span></label>
     </div>
+
     <span class="lbl">Voice</span>
     <select id="s-voice">
       <option value="alloy">Rachel — calm, professional</option>
       <option value="echo">Domi — energetic</option>
       <option value="fable">Bella — warm, friendly</option>
       <option value="onyx">Arnold — deep, authoritative</option>
-      <option value="nova">Adam — neutral male</option>
-      <option value="shimmer">Sam — casual</option>
     </select>
+
     <span class="lbl">Tone</span>
     <select id="s-tone">
       <option value="professional">Professional</option>
       <option value="casual">Casual</option>
       <option value="exciting">Exciting</option>
-      <option value="technical">Technical</option>
     </select>
+
+    <!-- Advanced Options -->
+    <div class="advanced">
+      <div class="advanced-title">⚙️ Advanced Options</div>
+
+      <span class="lbl">Playback speed</span>
+      <div class="slider-row">
+        <input type="range" id="s-speed" min="1" max="3" step="0.5" value="1">
+        <div class="slider-val"><span id="s-speed-val">1.0</span>x</div>
+      </div>
+
+      <div class="trow">
+        <div class="trow-label">🔐 Auto-blur credentials <small>API keys, passwords</small></div>
+        <label class="tog"><input type="checkbox" id="s-blur-creds"><span class="ts"></span></label>
+      </div>
+
+      <div class="trow">
+        <div class="trow-label">📝 Add chapter overlays <small>Auto from script</small></div>
+        <label class="tog"><input type="checkbox" id="s-chapters"><span class="ts"></span></label>
+      </div>
+
+      <div class="trow">
+        <div class="trow-label">✨ Auto-zoom on clicks <small>Zoom in on interaction</small></div>
+        <label class="tog"><input type="checkbox" id="s-autozoom" checked><span class="ts"></span></label>
+      </div>
+
+      <div class="trow">
+        <div class="trow-label">🖱️ Cursor effects <small>Smooth + glow</small></div>
+        <label class="tog"><input type="checkbox" id="s-cursor" checked><span class="ts"></span></label>
+      </div>
+    </div>
+
     <button class="btn btn-primary" id="s-start">⏺ Start Recording</button>
   </div>
 
   <!-- Recording -->
   <div id="s-recording" class="hidden">
-    <div style="text-align:center;padding:10px 0;color:#dc2626;font-weight:600;font-size:0.9rem;">⏺ Recording...</div>
+    <div style="text-align:center;padding:10px 0;color:#dc2626;font-weight:600;">⏺ Recording...</div>
     <button class="btn btn-danger" id="s-stop">⏹ Stop Recording</button>
   </div>
 
   <!-- Describe -->
   <div id="s-describe" class="hidden">
     <span class="lbl">Describe this feature *</span>
-    <textarea id="s-desc" placeholder="e.g. Showing the new drag-drop file upload feature..."></textarea>
+    <textarea id="s-desc" placeholder="What feature are you showing? Be specific about the steps..."></textarea>
+
     <span class="lbl">Feature title (optional)</span>
     <input type="text" id="s-title" placeholder="e.g. Drag & Drop Upload" />
+
     <button class="btn btn-primary" id="s-generate">🚀 Generate Demo Video</button>
     <button class="btn btn-ghost" id="s-discard">🗑 Discard</button>
   </div>
@@ -215,113 +227,87 @@
   </div>
 </div>
 
-<!-- ── MULTI-CLIP REEL TAB ─────────────────────────────────────── -->
+<!-- ── REEL TAB ─────────────────────────────────────────────────── -->
 <div class="tab-panel" id="tab-reel">
 
-  <div style="font-size:0.78rem;color:#8b949e;margin-bottom:10px;background:rgba(37,99,235,0.07);border:1px solid rgba(37,99,235,0.2);border-radius:7px;padding:10px;">
-    🎞 Record <strong>multiple clips</strong>, then assemble into one engaging teaser reel with transitions, SFX, and voiceover.
-  </div>
-
-  <!-- Clip list -->
-  <div class="clip-list" id="reel-clips">
-    <div class="clip-empty">No clips yet. Record or upload clips below.</div>
+  <div style="font-size:0.75rem;color:#8b949e;margin-bottom:10px;background:rgba(37,99,235,0.07);border:1px solid rgba(37,99,235,0.2);border-radius:7px;padding:10px;">
+    🎞 Record multiple clips with advanced effects, then assemble into one engaging teaser reel.
   </div>
 
   <div style="display:flex;gap:6px;margin-bottom:12px;">
     <button class="btn btn-primary btn-sm" id="reel-record-btn" onclick="reelRecordClip()" style="flex:1;">⏺ Record Clip</button>
     <label class="btn btn-ghost btn-sm" style="flex:1;text-align:center;cursor:pointer;margin-bottom:0;">
-      📂 Upload Clip
+      📂 Upload
       <input type="file" id="reel-upload-input" accept="video/*" style="display:none" onchange="reelAddUpload(event)" multiple />
     </label>
   </div>
 
-  <!-- Currently recording indicator -->
-  <div id="reel-recording-bar" class="hidden" style="background:#1e0a0a;border:1px solid rgba(220,38,38,0.4);border-radius:7px;padding:10px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-    <div class="dot recording"></div>
-    <span style="font-size:0.8rem;color:#fca5a5;">Recording clip <span id="reel-clip-num">1</span>...</span>
-    <button class="btn btn-danger btn-sm" onclick="reelStopClip()" style="margin-left:auto;margin-bottom:0;">⏹ Stop</button>
+  <div id="reel-clips" style="margin-bottom:12px;font-size:0.75rem;">
+    <div style="color:#8b949e;text-align:center;padding:12px;">No clips yet.</div>
   </div>
 
-  <div class="divider"></div>
+  <div class="advanced">
+    <div class="advanced-title">🎯 Reel Settings</div>
 
-  <!-- Reel options -->
-  <div class="section">
-    <span class="lbl">Reel description / purpose *</span>
-    <textarea id="reel-desc" placeholder="e.g. 3-clip teaser showing the key features of our app — upload, dashboard, and export"></textarea>
+    <span class="lbl">Reel description *</span>
+    <textarea id="reel-desc" placeholder="What's this reel about?"></textarea>
 
-    <span class="lbl">SFX Style (ElevenLabs)</span>
+    <span class="lbl">SFX style</span>
     <select id="reel-sfx">
       <option value="whoosh">Whoosh transitions</option>
       <option value="cinematic">Cinematic impact</option>
-      <option value="tech">Tech/UI clicks</option>
-      <option value="none">No SFX (VO only)</option>
+      <option value="tech">Tech clicks</option>
+      <option value="none">No SFX</option>
     </select>
 
-    <span class="lbl">Cursor Style</span>
-    <div class="pill-row" id="cursor-pills">
-      <div class="pill active" data-cursor="smooth">🖱 Smooth</div>
-      <div class="pill" data-cursor="spotlight">🔦 Spotlight</div>
-      <div class="pill" data-cursor="enlarge">🔍 Auto-enlarge</div>
-      <div class="pill" data-cursor="none">✕ None</div>
-    </div>
-
-    <div class="trow">
-      <div class="trow-label">⚡ Auto-zoom on cursor activity<small>Zooms in when you click</small></div>
-      <label class="tog"><input type="checkbox" id="reel-autozoom" checked><span class="ts"></span></label>
+    <span class="lbl">Speed</span>
+    <div class="slider-row">
+      <input type="range" id="reel-speed" min="1" max="3" step="0.5" value="1">
+      <div class="slider-val"><span id="reel-speed-val">1.0</span>x</div>
     </div>
 
     <span class="lbl">Voice</span>
     <select id="reel-voice">
-      <option value="alloy">Rachel — calm, professional</option>
-      <option value="echo">Domi — energetic</option>
-      <option value="fable">Bella — warm, friendly</option>
-      <option value="onyx">Arnold — deep, authoritative</option>
-      <option value="nova">Adam — neutral male</option>
+      <option value="alloy">Rachel</option>
+      <option value="echo">Domi</option>
+      <option value="fable">Bella</option>
     </select>
 
-    <span class="lbl">Tone</span>
-    <select id="reel-tone">
-      <option value="exciting">Exciting / Teaser</option>
-      <option value="professional">Professional</option>
-      <option value="casual">Casual</option>
-    </select>
+    <div class="trow">
+      <div class="trow-label">📝 Chapter overlays</div>
+      <label class="tog"><input type="checkbox" id="reel-chapters" checked><span class="ts"></span></label>
+    </div>
 
     <div id="reel-warn" class="warn hidden"></div>
-
-    <button class="btn btn-primary" id="reel-generate" onclick="generateReel()">🚀 Generate Teaser Reel</button>
+    <button class="btn btn-primary" id="reel-generate" onclick="generateReel()">🚀 Generate Reel</button>
   </div>
 
-  <!-- Result -->
   <div id="reel-result" class="result-box hidden">
-    <div style="font-weight:600;margin-bottom:8px;">✅ Reel pipeline started!</div>
-    <a id="reel-watch" href="#" target="_blank">👉 Watch progress & download</a>
+    <div style="font-weight:600;margin-bottom:8px;">✅ Reel started!</div>
+    <a id="reel-watch" href="#" target="_blank">👉 Watch progress</a>
     <div class="job-id" id="reel-jobid"></div>
   </div>
 </div>
 
-<!-- ── SETTINGS TAB ────────────────────────────────────────────── -->
+<!-- ── SETTINGS ─────────────────────────────────────────────────── -->
 <div class="tab-panel" id="tab-settings">
-  <span class="lbl">DemoReel Server URL</span>
+  <span class="lbl">Server URL</span>
   <input type="url" id="cfg-server" value="https://demoreel-production.up.railway.app" />
 
   <div class="trow">
-    <div class="trow-label">Add DemoReel watermark<small>Subtle badge on exported video</small></div>
-    <label class="tog"><input type="checkbox" id="cfg-watermark"><span class="ts"></span></label>
-  </div>
-
-  <div class="trow">
-    <div class="trow-label">Auto-open result when done<small>Opens Railway job URL in new tab</small></div>
+    <div class="trow-label">Auto-open when done</div>
     <label class="tog"><input type="checkbox" id="cfg-autoopen" checked><span class="ts"></span></label>
   </div>
 
-  <div class="divider"></div>
+  <div style="margin-top:16px;padding:12px;background:#161b22;border-radius:8px;font-size:0.75rem;color:#8b949e;">
+    <strong>Coming Soon:</strong> Face-to-speech integration (HeyGen/D-ID) for automatic lip-sync with your voiceover. Currently supported: webcam overlay.
+  </div>
 
-  <span class="lbl">Recent Jobs</span>
-  <div id="recent-jobs" style="font-size:0.75rem;color:#8b949e;">Loading...</div>
+  <div style="margin-top:16px;padding:12px;background:rgba(37,99,235,0.07);border:1px solid rgba(37,99,235,0.2);border-radius:8px;font-size:0.75rem;color:#93c5fd;">
+    <strong>💡 Pro Tip:</strong> Use region select to crop UI elements. Auto-blur hides sensitive data. Chapter overlays break down complex flows.
+  </div>
 
-  <div class="divider"></div>
-
-  <button class="btn btn-ghost" onclick="clearJobs()">🗑 Clear Recent Jobs</button>
+  <button class="btn btn-ghost" onclick="clearSettings()" style="margin-top:16px;">🗑 Clear All Data</button>
 </div>
 
 <script src="popup.js"></script>
