@@ -1,16 +1,18 @@
 /**
  * DemoReel Pro — popup.js
- * Single clip + Reel with: auto-blur, chapters, speed control, webcam, region select
+ * Projects dashboard + 4-step wizard + Reel builder
  */
 
 const DEFAULT_SERVER = 'https://demoreel-production.up.railway.app';
 let serverUrl = DEFAULT_SERVER;
+
+// Recording state
 let mediaRecorder = null;
 let recordedChunks = [];
 let stream = null;
 let recordingBlob = null;
-let selectedRegion = null;
-let webcamStream = null;
+let recordingTimerInterval = null;
+let recordingSeconds = 0;
 
 // Reel state
 let reelClips = [];
@@ -18,99 +20,224 @@ let reelMediaRecorder = null;
 let reelStream = null;
 let reelChunks = [];
 
-document.addEventListener('DOMContentLoaded', async () => {
-  const cfg = await chrome.storage.local.get(['serverUrl', 'autoOpen']);
-  if (cfg.serverUrl) serverUrl = cfg.serverUrl;
-  if (cfg.autoOpen !== undefined) document.getElementById('cfg-autoopen').checked = cfg.autoOpen;
+// Wizard state
+let currentStep = 1;
+let autoRefreshTimer = null;
 
+document.addEventListener('DOMContentLoaded', async () => {
+  const cfg = await chrome.storage.local.get(['serverUrl', 'autoOpen', 'autoRefresh']);
+  if (cfg.serverUrl) { serverUrl = cfg.serverUrl; document.getElementById('cfg-server').value = serverUrl; }
+  if (cfg.autoOpen !== undefined) document.getElementById('cfg-autoopen').checked = cfg.autoOpen;
+  if (cfg.autoRefresh !== undefined) document.getElementById('cfg-autorefresh').checked = cfg.autoRefresh !== false;
+
+  // Settings listeners
   document.getElementById('cfg-server').addEventListener('change', e => {
     serverUrl = (e.target.value.trim() || DEFAULT_SERVER).replace(/\/$/, '');
     chrome.storage.local.set({ serverUrl });
   });
-  document.getElementById('cfg-autoopen').addEventListener('change', e => {
-    chrome.storage.local.set({ autoOpen: e.target.checked });
+  document.getElementById('cfg-autoopen').addEventListener('change', e => chrome.storage.local.set({ autoOpen: e.target.checked }));
+  document.getElementById('cfg-autorefresh').addEventListener('change', e => {
+    chrome.storage.local.set({ autoRefresh: e.target.checked });
+    if (e.target.checked) startAutoRefresh(); else stopAutoRefresh();
   });
 
   // Speed sliders
-  document.getElementById('s-speed').addEventListener('input', e => {
-    document.getElementById('s-speed-val').textContent = e.target.value;
+  document.getElementById('opt-speed').addEventListener('input', e => {
+    document.getElementById('opt-speed-val').textContent = parseFloat(e.target.value).toFixed(1);
   });
   document.getElementById('reel-speed').addEventListener('input', e => {
-    document.getElementById('reel-speed-val').textContent = e.target.value;
+    document.getElementById('reel-speed-val').textContent = parseFloat(e.target.value).toFixed(1);
   });
 
-  // Buttons
-  document.getElementById('s-start').addEventListener('click', singleStart);
-  document.getElementById('s-stop').addEventListener('click', singleStop);
-  document.getElementById('s-generate').addEventListener('click', singleGenerate);
-  document.getElementById('s-discard').addEventListener('click', singleDiscard);
-  document.getElementById('s-region').addEventListener('change', handleRegionToggle);
-  document.getElementById('s-webcam').addEventListener('change', handleWebcamToggle);
+  // Cursor pills
+  document.querySelectorAll('#cursor-pills .pill').forEach(p => {
+    p.addEventListener('click', () => {
+      document.querySelectorAll('#cursor-pills .pill').forEach(x => x.classList.remove('active'));
+      p.classList.add('active');
+    });
+  });
+
+  // Record buttons
+  document.getElementById('rec-start-btn').addEventListener('click', startRecording);
+  document.getElementById('rec-stop-btn').addEventListener('click', stopRecording);
+
+  // Region toggle
+  document.getElementById('opt-region').addEventListener('change', handleRegionToggle);
+
+  // Load projects
+  loadProjects();
+  if (document.getElementById('cfg-autorefresh').checked) startAutoRefresh();
 });
 
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t, i) => {
-    const names = ['single', 'reel', 'settings'];
-    t.classList.toggle('active', names[i] === name);
+// ── NAV ───────────────────────────────────────────────────────────
+function switchNav(name) {
+  ['projects', 'wizard', 'reel', 'settings'].forEach(n => {
+    document.getElementById(`nav-${n}`)?.classList.toggle('active', n === name);
+    document.getElementById(`panel-${n}`)?.classList.toggle('active', n === name);
   });
-  document.querySelectorAll('.tab-panel').forEach((p, i) => {
-    const names = ['tab-single', 'tab-reel', 'tab-settings'];
-    p.classList.toggle('active', p.id === `tab-${name}`);
-  });
+  if (name === 'projects') loadProjects();
 }
 
-// ── SINGLE CLIP ───────────────────────────────────────────────────
-function sSetStatus(text, state) {
-  document.getElementById('s-status').textContent = text;
-  const dot = document.getElementById('s-dot');
-  dot.className = 'dot ' + (state || '');
-}
-function sShow(id) {
-  ['s-pre', 's-recording', 's-describe', 's-result'].forEach(x => {
-    const el = document.getElementById(x);
-    if (el) el.classList.toggle('hidden', x !== id);
-  });
-}
+// ── PROJECTS ──────────────────────────────────────────────────────
+async function loadProjects() {
+  const list = document.getElementById('projects-list');
+  const btn = document.getElementById('refresh-btn');
+  if (btn) btn.textContent = '↻ Loading...';
 
-async function handleRegionToggle() {
-  if (!document.getElementById('s-region').checked) {
-    selectedRegion = null;
-    return;
-  }
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) {
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => window.postMessage({ type: 'DEMOREEL_REGION_SELECT' }, '*'),
-    });
-  }
-}
+  try {
+    const res = await fetch(`${serverUrl}/api/history?limit=30`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const jobs = data.jobs || [];
 
-async function handleWebcamToggle() {
-  if (!document.getElementById('s-webcam').checked) {
-    if (webcamStream) {
-      webcamStream.getTracks().forEach(t => t.stop());
-      webcamStream = null;
+    if (!jobs.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🎬</div>
+          <div>No projects yet.</div>
+          <div style="margin-top:6px;font-size:0.72rem;">Click "✨ New Demo" to start!</div>
+        </div>`;
+      return;
     }
-    return;
-  }
-  try {
-    webcamStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 320, height: 240 },
-      audio: false,
-    });
+
+    list.innerHTML = jobs.map(job => renderProjectCard(job)).join('');
   } catch (err) {
-    document.getElementById('s-webcam').checked = false;
-    sSetStatus('Webcam access denied', '');
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <div>Could not load projects</div>
+        <div style="margin-top:4px;font-size:0.7rem;">${err.message}</div>
+      </div>`;
+  } finally {
+    if (btn) btn.textContent = '↻ Refresh';
   }
 }
 
-async function singleStart() {
+function renderProjectCard(job) {
+  const d = job.created_at
+    ? new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '';
+  const sz = job.video_size_bytes ? (job.video_size_bytes / 1024 / 1024).toFixed(1) + ' MB' : '';
+  const dur = job.duration_seconds ? Math.round(job.duration_seconds) + 's' : '';
+  const shortUrl = (job.url || '').replace(/^https?:\/\//, '').slice(0, 40);
+  const dlUrl = job.video_url || `${serverUrl}/api/download/${job.id}`;
+  const ready = job.status === 'completed';
+  const processing = job.status === 'processing' || job.status === 'queued';
+  const pct = job.progress_percent || (processing ? 50 : ready ? 100 : 0);
+
+  const statusClass = { completed: 'st-completed', processing: 'st-processing', queued: 'st-queued', failed: 'st-failed' }[job.status] || 'st-queued';
+  const statusLabel = { completed: '✅ Done', processing: '⚙️ Processing', queued: '⏳ Queued', failed: '❌ Failed' }[job.status] || job.status;
+
+  return `
+    <div class="project-card">
+      <div class="project-thumb">
+        ${job.thumbnail_url ? `<img src="${job.thumbnail_url}" alt="" loading="lazy" onerror="this.style.display='none'">` : '🎬'}
+        <div class="project-status ${statusClass}">${statusLabel}</div>
+      </div>
+      <div class="project-body">
+        <div class="project-name">${shortUrl || job.id?.slice(0,16) || 'Recording'}</div>
+        <div class="project-meta">
+          ${d ? `<span>📅 ${d}</span>` : ''}
+          ${dur ? `<span>⏱ ${dur}</span>` : ''}
+          ${sz ? `<span>💾 ${sz}</span>` : ''}
+        </div>
+        ${processing ? `
+          <div class="project-progress">
+            <div class="project-progress-bar" style="width:${pct}%"></div>
+          </div>
+        ` : ''}
+        <div class="project-actions">
+          ${ready
+            ? `<a class="pa-btn pa-dl" href="${dlUrl}" target="_blank">⬇ Download</a>
+               <a class="pa-btn pa-open" href="${serverUrl}/?job=${job.id}" target="_blank">▶ Open</a>
+               <a class="pa-btn pa-xpost" href="${serverUrl}/api/xpost/${job.id}" target="_blank" onclick="openXPost('${job.id}',event)">𝕏 Post</a>`
+            : processing
+              ? `<a class="pa-btn pa-open" href="${serverUrl}/?job=${job.id}" target="_blank">👁 Watch</a>
+                 <div class="pa-btn pa-dim">⬇ Pending</div>`
+              : `<div class="pa-btn pa-dim">⬇ Not ready</div>
+                 <a class="pa-btn pa-open" href="${serverUrl}/?job=${job.id}" target="_blank">▶ Open</a>`
+          }
+        </div>
+      </div>
+    </div>`;
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshTimer = setInterval(() => {
+    const projPanel = document.getElementById('panel-projects');
+    if (projPanel?.classList.contains('active')) loadProjects();
+  }, 15000);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+}
+
+async function openXPost(jobId, e) {
+  e.preventDefault();
   try {
-    sSetStatus('Requesting screen...', '');
+    const res = await fetch(`${serverUrl}/api/xpost/${jobId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    const text = d.fullPost || d.hook || '';
+    if (text) {
+      navigator.clipboard.writeText(text).catch(() => {});
+      alert(`X Post copied!\n\n${text.slice(0, 200)}...`);
+    }
+  } catch (err) {
+    alert('Could not generate X post: ' + err.message);
+  }
+}
+
+// ── WIZARD STEPS ──────────────────────────────────────────────────
+function goToStep(n) {
+  currentStep = n;
+  for (let i = 1; i <= 4; i++) {
+    const sp = document.getElementById(`step-${i}`);
+    const ws = document.getElementById(`ws-${i}`);
+    if (sp) sp.classList.toggle('active', i === n);
+    if (ws) {
+      ws.classList.remove('active', 'done');
+      if (i < n) ws.classList.add('done');
+      else if (i === n) ws.classList.add('active');
+    }
+  }
+  if (n === 4) renderStep4Summary();
+}
+
+function renderStep4Summary() {
+  const speed = document.getElementById('opt-speed').value;
+  const cursor = document.querySelector('#cursor-pills .pill.active')?.dataset.val || 'smooth';
+  const blur = document.getElementById('opt-blur').checked;
+  const zoom = document.getElementById('opt-zoom').checked;
+  const chapters = document.getElementById('opt-chapters').checked;
+  const tone = document.getElementById('proj-tone').value;
+  const voice = document.getElementById('proj-voice').options[document.getElementById('proj-voice').selectedIndex].text;
+  const purpose = document.getElementById('proj-purpose').value;
+  const title = document.getElementById('proj-title').value || '(no title)';
+  const recSize = recordingBlob ? formatSize(recordingBlob.size) : 'Uploaded file';
+
+  document.getElementById('step4-summary').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <div>📹 <strong>Recording</strong><br><span style="color:#8b949e;">${recSize}</span></div>
+      <div>🎯 <strong>Purpose</strong><br><span style="color:#8b949e;">${purpose.replace(/-/g,' ')}</span></div>
+      <div>✍️ <strong>Title</strong><br><span style="color:#8b949e;">${title}</span></div>
+      <div>🗣 <strong>Voice</strong><br><span style="color:#8b949e;">${voice.split('—')[0].trim()}</span></div>
+      <div>⚡ <strong>Speed</strong><br><span style="color:#8b949e;">${speed}x</span></div>
+      <div>🖱 <strong>Cursor</strong><br><span style="color:#8b949e;">${cursor}</span></div>
+      <div>🔐 <strong>Blur creds</strong><br><span style="color:${blur?'#86efac':'#8b949e'};">${blur?'Yes':'No'}</span></div>
+      <div>📝 <strong>Chapters</strong><br><span style="color:${chapters?'#86efac':'#8b949e'};">${chapters?'Yes':'No'}</span></div>
+    </div>
+  `;
+}
+
+// ── RECORDING ─────────────────────────────────────────────────────
+async function startRecording() {
+  try {
+    document.getElementById('rec-status').textContent = 'Requesting screen access...';
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { cursor: document.getElementById('s-cursor').checked ? 'always' : 'never' },
-      audio: false,
+      video: { cursor: 'always' }, audio: false,
     });
 
     recordedChunks = [];
@@ -119,148 +246,198 @@ async function singleStart() {
     mediaRecorder.ondataavailable = e => { if (e.data?.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
       recordingBlob = new Blob(recordedChunks, { type: mimeType });
-      sSetStatus(`Recorded ${formatSize(recordingBlob.size)}`, 'ready');
-      sShow('s-describe');
+      clearInterval(recordingTimerInterval);
+      document.getElementById('rec-dot').className = 'dot ready';
+      document.getElementById('rec-idle').classList.add('hidden');
+      document.getElementById('rec-active').classList.add('hidden');
+      document.getElementById('rec-done').classList.remove('hidden');
+      document.getElementById('rec-size').textContent = formatSize(recordingBlob.size);
+      document.getElementById('rec-status').textContent = `Captured ${formatSize(recordingBlob.size)}`;
     };
-    stream.getVideoTracks()[0].addEventListener('ended', () => singleStop());
+    stream.getVideoTracks()[0].addEventListener('ended', stopRecording);
     mediaRecorder.start(500);
-    sSetStatus('Recording...', 'recording');
-    sShow('s-recording');
+
+    // Timer
+    recordingSeconds = 0;
+    recordingTimerInterval = setInterval(() => {
+      recordingSeconds++;
+      const m = Math.floor(recordingSeconds / 60);
+      const s = recordingSeconds % 60;
+      document.getElementById('rec-timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+    }, 1000);
+
+    document.getElementById('rec-dot').className = 'dot recording';
+    document.getElementById('rec-status').textContent = 'Recording...';
+    document.getElementById('rec-idle').classList.add('hidden');
+    document.getElementById('rec-active').classList.remove('hidden');
+    document.getElementById('rec-done').classList.add('hidden');
   } catch (err) {
-    sSetStatus(err.name === 'NotAllowedError' ? 'Permission denied' : err.message, '');
+    document.getElementById('rec-status').textContent = err.name === 'NotAllowedError' ? 'Permission denied' : err.message;
   }
 }
 
-function singleStop() {
+function stopRecording() {
   if (mediaRecorder?.state !== 'inactive') mediaRecorder?.stop();
   stream?.getTracks().forEach(t => t.stop());
   stream = null;
-  sSetStatus('Processing...', 'processing');
 }
 
-async function singleGenerate() {
-  const desc = document.getElementById('s-desc').value.trim();
-  const title = document.getElementById('s-title').value.trim();
-  if (!desc) { document.getElementById('s-desc').focus(); return; }
-  if (!recordingBlob) return;
+function handleUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  recordingBlob = file;
+  document.getElementById('rec-idle').classList.add('hidden');
+  document.getElementById('rec-active').classList.add('hidden');
+  document.getElementById('rec-done').classList.remove('hidden');
+  document.getElementById('rec-size').textContent = formatSize(file.size);
+  document.getElementById('rec-status').textContent = `Loaded: ${file.name}`;
+}
 
-  const btn = document.getElementById('s-generate');
+function discardRecording() {
+  recordingBlob = null;
+  recordedChunks = [];
+  clearInterval(recordingTimerInterval);
+  document.getElementById('rec-idle').classList.remove('hidden');
+  document.getElementById('rec-active').classList.add('hidden');
+  document.getElementById('rec-done').classList.add('hidden');
+  document.getElementById('rec-dot').className = 'dot ready';
+  document.getElementById('rec-status').textContent = 'Ready';
+}
+
+async function handleRegionToggle() {
+  if (!document.getElementById('opt-region').checked) return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.postMessage({ type: 'DEMOREEL_REGION_SELECT' }, '*'),
+    });
+    window.close();
+  }
+}
+
+// ── GENERATE ──────────────────────────────────────────────────────
+async function generateDemo() {
+  const desc = document.getElementById('proj-desc').value.trim();
+  if (!desc) {
+    document.getElementById('gen-warn').textContent = '⚠️ Describe the feature in Step 3.';
+    document.getElementById('gen-warn').classList.remove('hidden');
+    return;
+  }
+  if (!recordingBlob) {
+    document.getElementById('gen-warn').textContent = '⚠️ No recording found. Go back to Step 1.';
+    document.getElementById('gen-warn').classList.remove('hidden');
+    return;
+  }
+
+  const btn = document.getElementById('gen-btn');
   btn.disabled = true;
   btn.textContent = '⏳ Uploading...';
-  sSetStatus('Uploading to DemoReel...', 'processing');
+  document.getElementById('gen-warn').classList.add('hidden');
 
   try {
     const fd = new FormData();
     fd.append('recording', recordingBlob, 'recording.webm');
     fd.append('description', desc);
-    fd.append('title', title || desc.slice(0, 50));
-    fd.append('voice', document.getElementById('s-voice').value);
-    fd.append('tone', document.getElementById('s-tone').value);
-    fd.append('purpose', 'product-demo');
-    fd.append('speed', document.getElementById('s-speed').value);
-    fd.append('blurCredentials', document.getElementById('s-blur-creds').checked);
-    fd.append('chapters', document.getElementById('s-chapters').checked);
-    fd.append('autoZoom', document.getElementById('s-autozoom').checked);
-    fd.append('cursor', document.getElementById('s-cursor').checked);
-    fd.append('webcam', document.getElementById('s-webcam').checked);
-    if (selectedRegion) fd.append('region', JSON.stringify(selectedRegion));
+    fd.append('title', document.getElementById('proj-title').value.trim() || desc.slice(0, 50));
+    fd.append('purpose', document.getElementById('proj-purpose').value);
+    fd.append('tone', document.getElementById('proj-tone').value);
+    fd.append('voice', document.getElementById('proj-voice').value);
+    fd.append('speed', document.getElementById('opt-speed').value);
+    fd.append('blurCredentials', document.getElementById('opt-blur').checked);
+    fd.append('chapters', document.getElementById('opt-chapters').checked);
+    fd.append('autoZoom', document.getElementById('opt-zoom').checked);
+    fd.append('cursor', document.querySelector('#cursor-pills .pill.active')?.dataset.val || 'smooth');
+    fd.append('webcam', document.getElementById('opt-webcam').checked);
 
     const res = await fetch(`${serverUrl}/api/upload-recording`, { method: 'POST', body: fd });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const { id } = await res.json();
 
-    document.getElementById('s-jobid').textContent = `Job: ${id}`;
-    document.getElementById('s-watch').href = `${serverUrl}/?job=${id}`;
-    sShow('s-result');
+    document.getElementById('gen-jobid').textContent = `Job ID: ${id}`;
+    document.getElementById('gen-watch').href = `${serverUrl}/?job=${id}`;
+    document.getElementById('gen-success').classList.remove('hidden');
+    btn.classList.add('hidden');
 
     const cfg = await chrome.storage.local.get(['autoOpen']);
     if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/?job=${id}` });
 
   } catch (err) {
-    sSetStatus('Error: ' + err.message, '');
-  } finally {
+    document.getElementById('gen-warn').textContent = '❌ ' + err.message;
+    document.getElementById('gen-warn').classList.remove('hidden');
     btn.disabled = false;
     btn.textContent = '🚀 Generate Demo Video';
   }
 }
 
-function singleDiscard() {
-  recordingBlob = null;
-  recordedChunks = [];
-  document.getElementById('s-desc').value = '';
-  document.getElementById('s-title').value = '';
-  sShow('s-pre');
-  sSetStatus('Ready to record', 'ready');
+function startOver() {
+  recordingBlob = null; recordedChunks = [];
+  discardRecording();
+  document.getElementById('proj-title').value = '';
+  document.getElementById('proj-desc').value = '';
+  document.getElementById('gen-success').classList.add('hidden');
+  document.getElementById('gen-btn').classList.remove('hidden');
+  document.getElementById('gen-btn').disabled = false;
+  document.getElementById('gen-btn').textContent = '🚀 Generate Demo Video';
+  goToStep(1);
+  switchNav('wizard');
 }
 
 // ── REEL ──────────────────────────────────────────────────────────
 function renderReelClips() {
-  const el = document.getElementById('reel-clips');
+  const el = document.getElementById('reel-clip-list');
   if (!reelClips.length) {
-    el.innerHTML = '<div style="color:#8b949e;text-align:center;padding:12px;">No clips yet.</div>';
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:0.75rem;padding:8px;">No clips yet</div>';
     return;
   }
   el.innerHTML = reelClips.map((c, i) => `
-    <div style="display:flex;align-items:center;gap:8px;background:#161b22;border:1px solid #30363d;border-radius:7px;padding:8px 10px;margin-bottom:6px;">
-      <div style="background:#2563eb;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:0.68rem;font-weight:700;flex-shrink:0;">${i + 1}</div>
-      <div style="flex:1;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.78rem;">${c.name}</div>
-      <div style="color:#8b949e;font-size:0.7rem;flex-shrink:0;">${formatSize(c.size)}</div>
-      <div style="cursor:pointer;color:#8b949e;font-size:1rem;padding:0 2px;" onclick="reelRemoveClip(${i})">✕</div>
-    </div>
-  `).join('');
+    <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;margin-bottom:5px;font-size:0.75rem;">
+      <span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:0.65rem;flex-shrink:0;">${i+1}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</span>
+      <span style="color:var(--muted);flex-shrink:0;">${formatSize(c.size)}</span>
+      <span style="cursor:pointer;color:var(--muted);" onclick="reelRemove(${i})">✕</span>
+    </div>`).join('');
 }
 
-function reelRemoveClip(i) {
-  reelClips.splice(i, 1);
-  renderReelClips();
-}
+function reelRemove(i) { reelClips.splice(i, 1); renderReelClips(); }
 
-async function reelRecordClip() {
+async function reelRecord() {
   try {
-    document.getElementById('reel-record-btn').disabled = true;
+    document.getElementById('reel-rec-btn').disabled = true;
     reelStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
     reelChunks = [];
-    const mimeType = getSupportedMime();
-    reelMediaRecorder = new MediaRecorder(reelStream, { mimeType });
+    const mime = getSupportedMime();
+    reelMediaRecorder = new MediaRecorder(reelStream, { mimeType: mime });
     reelMediaRecorder.ondataavailable = e => { if (e.data?.size > 0) reelChunks.push(e.data); };
     reelMediaRecorder.onstop = () => {
-      const blob = new Blob(reelChunks, { type: mimeType });
+      const blob = new Blob(reelChunks, { type: mime });
       reelClips.push({ name: `Clip ${reelClips.length + 1}`, blob, size: blob.size });
       renderReelClips();
-      document.getElementById('reel-record-btn').disabled = false;
+      document.getElementById('reel-rec-btn').disabled = false;
     };
-    reelStream.getVideoTracks()[0].addEventListener('ended', () => reelStopClip());
+    reelStream.getVideoTracks()[0].addEventListener('ended', () => {
+      if (reelMediaRecorder?.state !== 'inactive') reelMediaRecorder?.stop();
+      reelStream?.getTracks().forEach(t => t.stop());
+    });
     reelMediaRecorder.start(500);
-  } catch (err) {
-    document.getElementById('reel-record-btn').disabled = false;
-  }
+  } catch { document.getElementById('reel-rec-btn').disabled = false; }
 }
 
-function reelStopClip() {
-  if (reelMediaRecorder?.state !== 'inactive') reelMediaRecorder?.stop();
-  reelStream?.getTracks().forEach(t => t.stop());
-  reelStream = null;
-}
-
-function reelAddUpload(event) {
-  Array.from(event.target.files).forEach(f => {
-    reelClips.push({ name: f.name, blob: f, size: f.size });
-  });
+function reelAddFiles(e) {
+  Array.from(e.target.files).forEach(f => reelClips.push({ name: f.name, blob: f, size: f.size }));
   renderReelClips();
-  event.target.value = '';
+  e.target.value = '';
 }
 
 async function generateReel() {
   const warnEl = document.getElementById('reel-warn');
-  warnEl.classList.add('hidden');
-
   const desc = document.getElementById('reel-desc').value.trim();
-  if (!desc) { warnEl.textContent = '⚠️ Describe the reel.'; warnEl.classList.remove('hidden'); return; }
-  if (reelClips.length < 2) { warnEl.textContent = '⚠️ Add at least 2 clips.'; warnEl.classList.remove('hidden'); return; }
+  warnEl.classList.add('hidden');
+  if (!desc) { warnEl.textContent = '⚠️ Add a reel description.'; warnEl.classList.remove('hidden'); return; }
+  if (reelClips.length < 2) { warnEl.textContent = '⚠️ Need at least 2 clips.'; warnEl.classList.remove('hidden'); return; }
 
-  const btn = document.getElementById('reel-generate');
-  btn.disabled = true;
-  btn.textContent = '⏳ Uploading...';
+  const btn = document.querySelector('#panel-reel .btn-primary');
+  btn.disabled = true; btn.textContent = '⏳ Uploading...';
 
   try {
     const fd = new FormData();
@@ -269,7 +446,6 @@ async function generateReel() {
     fd.append('sfx', document.getElementById('reel-sfx').value);
     fd.append('speed', document.getElementById('reel-speed').value);
     fd.append('voice', document.getElementById('reel-voice').value);
-    fd.append('chapters', document.getElementById('reel-chapters').checked);
 
     const res = await fetch(`${serverUrl}/api/upload-reel`, { method: 'POST', body: fd });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
@@ -277,44 +453,24 @@ async function generateReel() {
 
     document.getElementById('reel-jobid').textContent = `Job: ${id}`;
     document.getElementById('reel-watch').href = `${serverUrl}/?job=${id}`;
-    document.getElementById('reel-result').classList.remove('hidden');
+    document.getElementById('reel-success').classList.remove('hidden');
 
     const cfg = await chrome.storage.local.get(['autoOpen']);
     if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/?job=${id}` });
-
   } catch (err) {
-    warnEl.textContent = '❌ ' + err.message;
-    warnEl.classList.remove('hidden');
+    warnEl.textContent = '❌ ' + err.message; warnEl.classList.remove('hidden');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '🚀 Generate Reel';
+    btn.disabled = false; btn.textContent = '🚀 Generate Reel';
   }
 }
 
-function clearSettings() {
-  if (confirm('Clear all extension data?')) {
-    chrome.storage.local.clear();
-    location.reload();
-  }
+function clearAll() {
+  if (confirm('Clear all DemoReel extension data?')) { chrome.storage.local.clear(); location.reload(); }
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────
 function getSupportedMime() {
-  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
-  return types.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+  return ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
 }
-
-function formatSize(bytes) {
-  if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-  return (bytes / 1024).toFixed(0) + ' KB';
+function formatSize(b) {
+  return b > 1048576 ? (b/1048576).toFixed(1)+' MB' : Math.round(b/1024)+' KB';
 }
-
-// Listen for region select from content script
-window.addEventListener('message', e => {
-  if (e.source !== window) return;
-  if (e.data?.type === 'DEMOREEL_REGION_SELECTED') {
-    selectedRegion = e.data.region;
-  } else if (e.data?.type === 'DEMOREEL_REGION_CANCELLED') {
-    document.getElementById('s-region').checked = false;
-  }
-});
