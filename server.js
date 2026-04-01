@@ -1435,6 +1435,320 @@ async function runReelPipeline({ id, job, clips, description, sfx, cursor, autoZ
   }
 }
 
+// ─── POST /api/agent-record ──────────────────────────────────────────────────
+/**
+ * Agent-native endpoint: give a URL + brief → get a polished MP4 back.
+ * No browser session required. Full pipeline: record → script → VO → Shotstack.
+ *
+ * Body (JSON):
+ *   url          {string}  required  — URL to navigate and record
+ *   brief        {string}  optional  — Plain-English description (used for auto script gen)
+ *   script       {string}  optional  — Voiceover script. If omitted, auto-generated from brief
+ *   actions      {Array}   optional  — Pre-recording interactions: click/wait/type/scroll-to/hover
+ *   style        {string}  optional  — Background style (e.g. "macOS Frame", "gradient-sunset")
+ *   bgColor      {string}  optional  — Hex bg color (default #0d1117)
+ *   bgPadding    {number}  optional  — Padding px (default 40)
+ *   music        {string}  optional  — Music track name (e.g. "ambient-light")
+ *   voice        {string}  optional  — ElevenLabs voice ID or null for default
+ *   viewport     {string}  optional  — mobile|tablet|desktop|widescreen (default: desktop)
+ *   duration     {number}  optional  — Cap in seconds (default: 30)
+ *   webhookUrl   {string}  optional  — POST result here when done: { jobId, videoUrl, script }
+ *
+ * Returns immediately: { jobId, status: "queued", pollUrl }
+ */
+app.post('/api/agent-record', async (req, res) => {
+  const {
+    url,
+    brief = '',
+    script: manualScript = null,
+    actions = [],
+    style = 'dark-studio',
+    bgColor = '#0d1117',
+    bgPadding = 40,
+    music = null,
+    voice = null,
+    viewport = 'desktop',
+    duration = 30,
+    webhookUrl = null,
+  } = req.body;
+
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'url is required' });
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.status(400).json({ error: 'Only http/https URLs allowed' });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: `Invalid URL: ${e.message}` });
+  }
+
+  if (getActiveJobCount() >= MAX_CONCURRENT) {
+    return res.status(429).json({ error: 'Max concurrent jobs reached. Try again shortly.', retryAfter: 30 });
+  }
+
+  const jobId = uuidv4();
+  const job = {
+    status: 'queued',
+    progress: 'Queued for agent recording...',
+    progressPercent: 0,
+    outputPath: null,
+    videoUrl: null,
+    thumbnailUrl: null,
+    assembledVideoUrl: null,
+    script: null,
+    voiceoverUrl: null,
+    shotstackRenderId: null,
+    error: null,
+    createdAt: Date.now(),
+    estimatedTime: parseInt(duration) + 60,
+    metadata: { duration: null, fileSize: null, resolution: null, scenes: 0 },
+    source: 'agent-record',
+  };
+
+  jobs.set(jobId, job);
+  storage.createJob(jobId, parsedUrl.href, { brief, style, music, viewport, duration }, getClientIp(req), req.headers['user-agent']).catch(() => {});
+
+  // Run pipeline async
+  (async () => {
+    const outputPath = `/tmp/agent-record-${jobId}.mp4`;
+    try {
+      // ── 1. Record the URL ──────────────────────────────────────────────────
+      job.status = 'processing';
+      job.progress = 'Recording URL...';
+      job.progressPercent = 10;
+
+      // Map agent-friendly actions → recorder.js format (already compatible)
+      const interactions = Array.isArray(actions) ? actions : [];
+
+      let musicTrack = false;
+      let musicVolume = 0.3;
+      if (music && music !== 'none') {
+        musicTrack = music;
+      }
+
+      await record({
+        url: parsedUrl.href,
+        speed: 'medium',
+        viewport,
+        theme: 'dark',
+        cursor: true,
+        duration: Math.max(5, Math.min(120, parseInt(duration) || 30)),
+        music: musicTrack,
+        musicVolume,
+        scrollTarget: 'auto',
+        hideScrollbar: true,
+        interactions,
+        outputPath,
+        onProgress: (msg) => { job.progress = msg; },
+      });
+
+      job.outputPath = outputPath;
+      job.progressPercent = 35;
+
+      // ── 2. Upload recording to R2 ──────────────────────────────────────────
+      job.progress = 'Uploading recording...';
+      let recordingUrl = null;
+      try {
+        const fileBuffer = fs.readFileSync(outputPath);
+        const r2Key = `agent-recordings/${jobId}.mp4`;
+        recordingUrl = await storage.uploadToR2(r2Key, fileBuffer, 'video/mp4');
+      } catch (e) {
+        console.warn('[agent-record] R2 upload failed, using local path:', e.message);
+        recordingUrl = `file://${outputPath}`;
+      }
+      job.progressPercent = 45;
+
+      // ── 3. Generate script if not provided ────────────────────────────────
+      job.progress = 'Generating script...';
+      let finalScript = manualScript;
+      let sections = [];
+      if (!finalScript) {
+        try {
+          const scriptResult = await generateScript({
+            url: parsedUrl.href,
+            purpose: brief || 'product-demo',
+            duration: parseInt(duration) || 30,
+            tone: 'professional',
+          });
+          finalScript = scriptResult.script;
+          sections = scriptResult.sections || [];
+        } catch (e) {
+          console.warn('[agent-record] Script gen failed, using brief as script:', e.message);
+          finalScript = brief || `Demo of ${parsedUrl.hostname}`;
+        }
+      }
+      job.script = finalScript;
+      job.progressPercent = 55;
+
+      // ── 4. Generate voiceover ──────────────────────────────────────────────
+      job.progress = 'Generating voiceover...';
+      let voiceoverPath = null;
+      let voiceoverUrl = null;
+      try {
+        const voResult = await generateVoiceover({
+          script: finalScript,
+          voice: voice || 'alloy',
+          provider: 'elevenlabs',
+        });
+        voiceoverPath = voResult.path || voResult.audioPath || null;
+        voiceoverUrl = voResult.url || null;
+      } catch (e) {
+        console.warn('[agent-record] Voiceover failed (continuing without):', e.message);
+      }
+      job.voiceoverUrl = voiceoverUrl;
+      job.progressPercent = 65;
+
+      // ── 5. Assemble via Shotstack ──────────────────────────────────────────
+      job.progress = 'Assembling video (Shotstack)...';
+      const { renderId } = await assembleDemo({
+        recordingUrl,
+        voiceoverUrl: voiceoverUrl || voiceoverPath,
+        script: finalScript,
+        sections,
+        bgColor,
+        bgStyle: style,
+        bgPadding: parseInt(bgPadding) || 40,
+        music: musicTrack || null,
+        duration: parseInt(duration) || 30,
+      });
+
+      job.shotstackRenderId = renderId;
+      job.progressPercent = 70;
+
+      // ── 6. Poll Shotstack ──────────────────────────────────────────────────
+      job.progress = 'Rendering video...';
+      let done = false;
+      let finalUrl = null;
+      const timeout = 60; // 5 min max (60 × 5s)
+      for (let i = 0; i < timeout; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        const poll = await pollShotstack(renderId);
+        if (poll.status === 'done') { finalUrl = poll.url; done = true; break; }
+        if (poll.status === 'failed') throw new Error(`Shotstack render failed: ${poll.error}`);
+        job.progressPercent = 70 + Math.round((i / timeout) * 28);
+      }
+      if (!done) throw new Error('Shotstack render timed out (5 min)');
+
+      // ── 7. Finalize ───────────────────────────────────────────────────────
+      job.status = 'completed';
+      job.progress = 'Done!';
+      job.progressPercent = 100;
+      job.videoUrl = finalUrl;
+      job.assembledVideoUrl = finalUrl;
+
+      storage.updateJob(jobId, { status: 'completed', video_url: finalUrl, script: finalScript }).catch(() => {});
+      console.log(`[agent-record] Job ${jobId} complete. URL: ${finalUrl}`);
+
+      // ── 8. Webhook callback ────────────────────────────────────────────────
+      if (webhookUrl) {
+        try {
+          const https = require('https');
+          const http = require('http');
+          const payload = JSON.stringify({ jobId, status: 'done', videoUrl: finalUrl, script: finalScript });
+          const whUrl = new URL(webhookUrl);
+          const lib = whUrl.protocol === 'https:' ? https : http;
+          const whReq = lib.request(whUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } });
+          whReq.write(payload);
+          whReq.end();
+          console.log(`[agent-record] Webhook fired → ${webhookUrl}`);
+        } catch (e) {
+          console.warn('[agent-record] Webhook failed:', e.message);
+        }
+      }
+
+      // Cleanup local tmp file
+      try { fs.unlinkSync(outputPath); } catch {}
+
+    } catch (err) {
+      console.error(`[agent-record] Job ${jobId} failed:`, err.message);
+      job.status = 'failed';
+      job.error = err.message;
+      job.progressPercent = 0;
+      storage.updateJob(jobId, { status: 'failed', error: err.message }).catch(() => {});
+      try { fs.unlinkSync(outputPath); } catch {}
+
+      // Webhook on failure too
+      if (webhookUrl) {
+        try {
+          const https = require('https');
+          const http = require('http');
+          const payload = JSON.stringify({ jobId, status: 'failed', error: err.message });
+          const whUrl = new URL(webhookUrl);
+          const lib = whUrl.protocol === 'https:' ? https : http;
+          const whReq = lib.request(whUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } });
+          whReq.write(payload);
+          whReq.end();
+        } catch {}
+      }
+    }
+  })();
+
+  res.json({
+    jobId,
+    status: 'queued',
+    pollUrl: `/api/jobs/${jobId}`,
+    message: 'Agent recording job queued. Poll pollUrl for status.',
+  });
+});
+
+/**
+ * GET /api/agent-record/schema
+ * Returns the full JSON schema for /api/agent-record — so agents can self-document.
+ */
+app.get('/api/agent-record/schema', (req, res) => {
+  res.json({
+    endpoint: 'POST /api/agent-record',
+    description: 'Agent-native demo video creation. Give a URL + brief → get a polished MP4.',
+    fields: {
+      url:        { type: 'string',  required: true,  description: 'URL to navigate and record' },
+      brief:      { type: 'string',  required: false, description: 'Plain-English description for auto script generation' },
+      script:     { type: 'string',  required: false, description: 'Manual voiceover script. If omitted, auto-generated from brief.' },
+      actions:    { type: 'array',   required: false, description: 'Pre-recording interactions', items: {
+        type:      'click | wait | type | scroll-to | hover',
+        selector:  'CSS selector (for click, type, scroll-to, hover)',
+        ms:        'Milliseconds (for wait)',
+        text:      'Text to type (for type)',
+      }},
+      style:      { type: 'string',  required: false, default: 'dark-studio', description: 'Background style name (e.g. macOS Frame, gradient-sunset, dark-glass)' },
+      bgColor:    { type: 'string',  required: false, default: '#0d1117',     description: 'Hex background color' },
+      bgPadding:  { type: 'number',  required: false, default: 40,            description: 'Frame padding in px' },
+      music:      { type: 'string',  required: false, default: null,          description: 'Music track name (e.g. ambient-light, upbeat-tech) or null' },
+      voice:      { type: 'string',  required: false, default: 'alloy',       description: 'ElevenLabs voice ID or OpenAI voice name' },
+      viewport:   { type: 'string',  required: false, default: 'desktop',     enum: ['mobile','tablet','desktop','widescreen'] },
+      duration:   { type: 'number',  required: false, default: 30,            description: 'Recording cap in seconds (5–120)' },
+      webhookUrl: { type: 'string',  required: false, default: null,          description: 'POST result here when done: { jobId, videoUrl, script }' },
+    },
+    returns: {
+      jobId:    'UUID for polling',
+      status:   'queued',
+      pollUrl:  '/api/jobs/{jobId}',
+      message:  'Human-readable status',
+    },
+    poll: {
+      endpoint: 'GET /api/jobs/{jobId}',
+      completedWhen: 'status === "completed"',
+      resultField: 'videoUrl',
+    },
+    example: {
+      url: 'https://demoreel-production.up.railway.app/record',
+      brief: 'Show how the background style picker works',
+      actions: [
+        { type: 'click', selector: '#bg-style-btn' },
+        { type: 'wait', ms: 800 },
+        { type: 'click', selector: '[data-style="gradient-sunset"]' },
+      ],
+      style: 'macOS Frame',
+      music: 'ambient-light',
+      duration: 30,
+      webhookUrl: 'https://your-agent.com/hooks/demoreel',
+    },
+  });
+});
+
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function start() {
   // Init storage (non-blocking if unavailable)
