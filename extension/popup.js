@@ -149,13 +149,13 @@ function renderProjectCard(job) {
         <div class="project-actions">
           ${ready
             ? `<a class="pa-btn pa-dl" href="${dlUrl}" target="_blank">⬇ Download</a>
-               <a class="pa-btn pa-open" href="${serverUrl}/?job=${job.id}" target="_blank">▶ Open</a>
+               <a class="pa-btn pa-open" href="${serverUrl}/dashboard?job=${job.id}" target="_blank">▶ Open</a>
                <a class="pa-btn pa-xpost" href="${serverUrl}/api/xpost/${job.id}" target="_blank" onclick="openXPost('${job.id}',event)">𝕏 Post</a>`
             : processing
-              ? `<a class="pa-btn pa-open" href="${serverUrl}/?job=${job.id}" target="_blank">👁 Watch</a>
+              ? `<a class="pa-btn pa-open" href="${serverUrl}/dashboard?job=${job.id}" target="_blank">👁 Watch</a>
                  <div class="pa-btn pa-dim">⬇ Pending</div>`
               : `<div class="pa-btn pa-dim">⬇ Not ready</div>
-                 <a class="pa-btn pa-open" href="${serverUrl}/?job=${job.id}" target="_blank">▶ Open</a>`
+                 <a class="pa-btn pa-open" href="${serverUrl}/dashboard?job=${job.id}" target="_blank">▶ Open</a>`
           }
         </div>
       </div>
@@ -355,12 +355,12 @@ async function generateDemo() {
     const { id } = await res.json();
 
     document.getElementById('gen-jobid').textContent = `Job ID: ${id}`;
-    document.getElementById('gen-watch').href = `${serverUrl}/?job=${id}`;
+    document.getElementById('gen-watch').href = `${serverUrl}/dashboard?job=${id}`;
     document.getElementById('gen-success').classList.remove('hidden');
     btn.classList.add('hidden');
 
     const cfg = await chrome.storage.local.get(['autoOpen']);
-    if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/?job=${id}` });
+    if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/dashboard?job=${id}` });
 
   } catch (err) {
     document.getElementById('gen-warn').textContent = '❌ ' + err.message;
@@ -452,11 +452,11 @@ async function generateReel() {
     const { id } = await res.json();
 
     document.getElementById('reel-jobid').textContent = `Job: ${id}`;
-    document.getElementById('reel-watch').href = `${serverUrl}/?job=${id}`;
+    document.getElementById('reel-watch').href = `${serverUrl}/dashboard?job=${id}`;
     document.getElementById('reel-success').classList.remove('hidden');
 
     const cfg = await chrome.storage.local.get(['autoOpen']);
-    if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/?job=${id}` });
+    if (cfg.autoOpen !== false) chrome.tabs.create({ url: `${serverUrl}/dashboard?job=${id}` });
   } catch (err) {
     warnEl.textContent = '❌ ' + err.message; warnEl.classList.remove('hidden');
   } finally {

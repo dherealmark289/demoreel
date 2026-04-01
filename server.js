@@ -774,6 +774,11 @@ app.get('/api/docs', (req, res) => {
 // ─── Serve audio files from public/audio ─────────────────────────────────────
 app.use('/audio', express.static(path.join(__dirname, 'public', 'audio')));
 
+// ─── Dashboard route ─────────────────────────────────────────────────────────
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW v3 ENDPOINTS: Screen Recording Upload + Assembly Pipeline + X Post
 // ─────────────────────────────────────────────────────────────────────────────
